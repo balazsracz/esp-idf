@@ -1039,15 +1039,23 @@ int esp_vfs_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds
 
         TickType_t ticks_to_wait = portMAX_DELAY;
         if (timeout) {
-            uint32_t timeout_ms = (timeout->tv_sec * 1000) + (timeout->tv_usec / 1000);
-            /* Round up the number of ticks.
-             * Not only we need to round up the number of ticks, but we also need to add 1.
-             * Indeed, `select` function shall wait for AT LEAST timeout, but on FreeRTOS,
-             * if we specify a timeout of 1 tick to `xSemaphoreTake`, it will take AT MOST
-             * 1 tick before triggering a timeout. Thus, we need to pass 2 ticks as a timeout
-             * to `xSemaphoreTake`. */
-            ticks_to_wait = ((timeout_ms + portTICK_PERIOD_MS - 1) / portTICK_PERIOD_MS) + 1;
-            ESP_LOGD(TAG, "timeout is %dms", timeout_ms);
+            if (timeout->tv_sec == 0 && timeout->tv_usec == 0) {
+                ticks_to_wait = 0;
+            } else {
+                uint32_t timeout_ms =
+                    (timeout->tv_sec * 1000) + (timeout->tv_usec / 1000);
+                /* Round up the number of ticks.
+                 * Not only we need to round up the number of ticks, but we also
+                 * need to add 1. Indeed, `select` function shall wait for AT
+                 * LEAST timeout, but on FreeRTOS, if we specify a timeout of 1
+                 * tick to `xSemaphoreTake`, it will take AT MOST 1 tick before
+                 * triggering a timeout. Thus, we need to pass 2 ticks as a
+                 * timeout to `xSemaphoreTake`. */
+                ticks_to_wait = ((timeout_ms + portTICK_PERIOD_MS - 1) /
+                                    portTICK_PERIOD_MS) +
+                    1;
+                ESP_LOGD(TAG, "timeout is %dms", timeout_ms);
+            }
         }
         ESP_LOGD(TAG, "waiting without calling socket_select");
         xSemaphoreTake(sel_sem.sem, ticks_to_wait);
