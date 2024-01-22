@@ -1044,6 +1044,10 @@ int esp_vfs_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *errorfds
             } else {
                 uint32_t timeout_ms =
                     (timeout->tv_sec * 1000) + (timeout->tv_usec / 1000);
+                if (timeout->tv_usec % 1000) {
+                    /* Round up sub-msec resolution. */
+                    ++timeout_ms;
+                }
                 /* Round up the number of ticks.
                  * Not only we need to round up the number of ticks, but we also
                  * need to add 1. Indeed, `select` function shall wait for AT
