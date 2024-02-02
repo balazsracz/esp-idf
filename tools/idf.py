@@ -27,7 +27,7 @@ from collections import Counter, OrderedDict, _OrderedDictKeysView
 from importlib import import_module
 from pkgutil import iter_modules
 from types import FrameType
-from typing import Any, Callable, Dict, List, Optional, TextIO, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 # pyc files remain in the filesystem when switching between branches which might raise errors for incompatible
 # idf.py extensions. Therefore, pyc file generation is turned off:
@@ -37,8 +37,8 @@ import python_version_checker  # noqa: E402
 
 try:
     from idf_py_actions.errors import FatalError  # noqa: E402
-    from idf_py_actions.tools import (PropertyDict, executable_exists, get_target, idf_version,  # noqa: E402
-                                      merge_action_lists, realpath)
+    from idf_py_actions.tools import (PROG, SHELL_COMPLETE_RUN, SHELL_COMPLETE_VAR, PropertyDict,  # noqa: E402
+                                      debug_print_idf_version, get_target, merge_action_lists, print_warning)
     if os.getenv('IDF_COMPONENT_MANAGER') != '0':
         from idf_component_manager import idf_extensions
 except ImportError:
@@ -53,23 +53,6 @@ PYTHON = sys.executable
 # you have to pass env=os.environ explicitly anywhere that we create a process
 os.environ['PYTHON'] = sys.executable
 
-# Name of the program, normally 'idf.py'.
-# Can be overridden from idf.bat using IDF_PY_PROGRAM_NAME
-PROG = os.getenv('IDF_PY_PROGRAM_NAME', 'idf.py')
-
-# environment variable used during click shell completion run
-SHELL_COMPLETE_VAR = '_IDF.PY_COMPLETE'
-
-# was shell completion invoked?
-SHELL_COMPLETE_RUN = SHELL_COMPLETE_VAR in os.environ
-
-
-# function prints warning when autocompletion is not being performed
-# set argument stream to sys.stderr for errors and exceptions
-def print_warning(message: str, stream: TextIO=None) -> None:
-    if not SHELL_COMPLETE_RUN:
-        print(message, file=stream or sys.stderr)
-
 
 def check_environment() -> List:
     """
@@ -79,15 +62,11 @@ def check_environment() -> List:
     """
     checks_output = []
 
-    if not executable_exists(['cmake', '--version']):
-        debug_print_idf_version()
-        raise FatalError("'cmake' must be available on the PATH to use %s" % PROG)
-
     # verify that IDF_PATH env variable is set
     # find the directory idf.py is in, then the parent directory of this, and assume this is IDF_PATH
-    detected_idf_path = realpath(os.path.join(os.path.dirname(__file__), '..'))
+    detected_idf_path = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
     if 'IDF_PATH' in os.environ:
-        set_idf_path = realpath(os.environ['IDF_PATH'])
+        set_idf_path = os.path.realpath(os.environ['IDF_PATH'])
         if set_idf_path != detected_idf_path:
             print_warning(
                 'WARNING: IDF_PATH environment variable is set to %s but %s path indicates IDF directory %s. '
@@ -135,14 +114,6 @@ def _safe_relpath(path: str, start: Optional[str]=None) -> str:
         return os.path.relpath(path, os.curdir if start is None else start)
     except ValueError:
         return os.path.abspath(path)
-
-
-def debug_print_idf_version() -> None:
-    version = idf_version()
-    if version:
-        print_warning('ESP-IDF %s' % version)
-    else:
-        print_warning('ESP-IDF version unknown')
 
 
 def init_cli(verbose_output: List=None) -> Any:
@@ -556,9 +527,14 @@ def init_cli(verbose_output: List=None) -> Any:
                         default = () if option.multiple else option.default
 
                         if global_value != default and local_value != default and global_value != local_value:
-                            raise FatalError(
-                                'Option "%s" provided for "%s" is already defined to a different value. '
-                                'This option can appear at most once in the command line.' % (key, task.name))
+                            if hasattr(option, 'envvar') and option.envvar and os.getenv(option.envvar) != default:
+                                msg = (f'This option cannot be set in command line if the {option.envvar} '
+                                       'environment variable is set to a different value.')
+                            else:
+                                msg = 'This option can appear at most once in the command line.'
+
+                            raise FatalError(f'Option "{key}" provided for "{task.name}" is already defined to '
+                                             f'a different value. {msg}')
                         if local_value != default:
                             global_args[key] = local_value
 
@@ -645,7 +621,7 @@ def init_cli(verbose_output: List=None) -> Any:
     )
     @click.option('-C', '--project-dir', default=os.getcwd(), type=click.Path())
     def parse_project_dir(project_dir: str) -> Any:
-        return realpath(project_dir)
+        return os.path.realpath(project_dir)
 
     # Set `complete_var` to not existing environment variable name to prevent early cmd completion
     project_dir = parse_project_dir(standalone_mode=False, complete_var='_IDF.PY_COMPLETE_NOT_EXISTING')
@@ -653,11 +629,11 @@ def init_cli(verbose_output: List=None) -> Any:
     all_actions: Dict = {}
     # Load extensions from components dir
     idf_py_extensions_path = os.path.join(os.environ['IDF_PATH'], 'tools', 'idf_py_actions')
-    extension_dirs = [realpath(idf_py_extensions_path)]
+    extension_dirs = [os.path.realpath(idf_py_extensions_path)]
     extra_paths = os.environ.get('IDF_EXTRA_ACTIONS_PATH')
     if extra_paths is not None:
         for path in extra_paths.split(';'):
-            path = realpath(path)
+            path = os.path.realpath(path)
             if path not in extension_dirs:
                 extension_dirs.append(path)
 
@@ -724,6 +700,12 @@ def main() -> None:
 
     # Check the environment only when idf.py is invoked regularly from command line.
     checks_output = None if SHELL_COMPLETE_RUN else check_environment()
+
+    # Check existance of the current working directory to prevent exceptions from click cli.
+    try:
+        os.getcwd()
+    except FileNotFoundError as e:
+        raise FatalError(f'ERROR: {e}. Working directory cannot be established. Check its existence.')
 
     try:
         cli = init_cli(verbose_output=checks_output)

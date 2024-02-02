@@ -20,6 +20,7 @@
 #include "esp_rom_sys.h"
 #include "clk_ctrl_os.h"
 #include "esp_private/periph_ctrl.h"
+#include "esp_memory_utils.h"
 
 static __attribute__((unused)) const char *LEDC_TAG = "ledc";
 
@@ -27,6 +28,7 @@ static __attribute__((unused)) const char *LEDC_TAG = "ledc";
 #define LEDC_ARG_CHECK(a, param) ESP_RETURN_ON_FALSE(a, ESP_ERR_INVALID_ARG, LEDC_TAG, param " argument is invalid")
 
 #define LEDC_CLK_NOT_FOUND  0
+#define LEDC_SLOW_CLK_UNINIT -1
 
 typedef enum {
     LEDC_FSM_IDLE,
@@ -493,7 +495,7 @@ static esp_err_t ledc_set_timer_div(ledc_mode_t speed_mode, ledc_timer_t timer_n
     /* Timer-specific mux. Set to timer-specific clock or LEDC_SCLK if a global clock is used. */
     ledc_clk_src_t timer_clk_src;
     /* Global clock mux. Should be set when LEDC_SCLK is used in LOW_SPEED_MODE. Otherwise left uninitialized. */
-    ledc_slow_clk_sel_t glb_clk;
+    ledc_slow_clk_sel_t glb_clk = LEDC_SLOW_CLK_UNINIT;
 
     if (clk_cfg == LEDC_AUTO_CLK) {
         /* User hasn't specified the speed, we should try to guess it. */
@@ -566,6 +568,8 @@ static esp_err_t ledc_set_timer_div(ledc_mode_t speed_mode, ledc_timer_t timer_n
          */
         assert(timer_clk_src == LEDC_SCLK);
 #endif
+        // Arriving here, variable glb_clk must have been assigned to one of the ledc_slow_clk_sel_t enum values
+        assert(glb_clk != LEDC_SLOW_CLK_UNINIT);
         ESP_LOGD(LEDC_TAG, "In slow speed mode, global clk set: %d", glb_clk);
 
         /* keep ESP_PD_DOMAIN_RTC8M on during light sleep */
@@ -836,7 +840,7 @@ uint32_t ledc_get_freq(ledc_mode_t speed_mode, ledc_timer_t timer_num)
         ESP_LOGW(LEDC_TAG, "LEDC timer not configured, call ledc_timer_config to set timer frequency");
         return 0;
     }
-    return ((uint64_t) src_clk_freq << 8) / precision / clock_divider;
+    return (((uint64_t) src_clk_freq << LEDC_LL_FRACTIONAL_BITS) + (uint64_t) precision * clock_divider / 2) / precision / clock_divider;
 }
 
 static inline void ledc_calc_fade_end_channel(uint32_t *fade_end_status, uint32_t *channel)
@@ -1232,8 +1236,15 @@ esp_err_t ledc_cb_register(ledc_mode_t speed_mode, ledc_channel_t channel, ledc_
 {
     LEDC_ARG_CHECK(speed_mode < LEDC_SPEED_MODE_MAX, "speed_mode");
     LEDC_ARG_CHECK(channel < LEDC_CHANNEL_MAX, "channel");
+    LEDC_ARG_CHECK(cbs, "callback");
     LEDC_CHECK(p_ledc_obj[speed_mode] != NULL, LEDC_NOT_INIT, ESP_ERR_INVALID_STATE);
     LEDC_CHECK(ledc_fade_channel_init_check(speed_mode, channel) == ESP_OK, LEDC_FADE_INIT_ERROR_STR, ESP_FAIL);
+    if (cbs->fade_cb && !esp_ptr_in_iram(cbs->fade_cb)) {
+        ESP_LOGW(LEDC_TAG, "fade callback not in IRAM");
+    }
+    if (user_arg && !esp_ptr_internal(user_arg)) {
+        ESP_LOGW(LEDC_TAG, "user context not in internal RAM");
+    }
     s_ledc_fade_rec[speed_mode][channel]->ledc_fade_callback = cbs->fade_cb;
     s_ledc_fade_rec[speed_mode][channel]->cb_user_arg = user_arg;
     return ESP_OK;

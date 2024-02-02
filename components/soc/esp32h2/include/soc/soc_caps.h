@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -77,6 +77,7 @@
 #define SOC_ADC_FILTER_SUPPORTED                1
 #define SOC_ADC_MONITOR_SUPPORTED               1
 #define SOC_ADC_DMA_SUPPORTED                   1
+#define SOC_ADC_DIG_SUPPORTED_UNIT(UNIT)        ((UNIT == 0) ? 1 : 0)    //Digital controller supported ADC unit
 #define SOC_ADC_PERIPH_NUM                      (1U)
 #define SOC_ADC_CHANNEL_NUM(PERIPH_NUM)         (5)
 #define SOC_ADC_MAX_CHANNEL_NUM                 (5)
@@ -154,12 +155,13 @@
 #define SOC_GPIO_VALID_OUTPUT_GPIO_MASK SOC_GPIO_VALID_GPIO_MASK
 #if CONFIG_IDF_TARGET_ESP32H2_BETA_VERSION_1
 #define SOC_GPIO_DEEP_SLEEP_WAKE_VALID_GPIO_MASK        (0ULL | BIT0 | BIT1 | BIT2 | BIT3 | BIT4 | BIT5)
+// digital I/O pad powered by VDD3P3_CPU or VDD_SPI(GPIO_NUM_6~GPIO_NUM_40)
+#define SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK 0x000001FFFFFFFFC0ULL
 #elif CONFIG_IDF_TARGET_ESP32H2_BETA_VERSION_2
 #define SOC_GPIO_DEEP_SLEEP_WAKE_VALID_GPIO_MASK        (0ULL | BIT7 | BIT8 | BIT9 | BIT10 | BIT11 | BIT12)
+// digital I/O pad powered by VDD3P3_CPU or VDD_SPI(GPIO_NUM_0~6, GPIO_NUM_13~25)
+#define SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK 0x0000000003FFE07FULL
 #endif
-
-// Support to configure sleep status
-#define SOC_GPIO_SUPPORT_SLP_SWITCH  (1)
 
 /*-------------------------- Dedicated GPIO CAPS -----------------------------*/
 #define SOC_DEDIC_GPIO_OUT_CHANNELS_NUM (8) /*!< 8 outward channels on each CPU core */
@@ -317,6 +319,13 @@
 #define SOC_TWAI_BRP_MAX                16384
 #define SOC_TWAI_SUPPORTS_RX_STATUS     1
 
+/*-------------------------- eFuse CAPS----------------------------*/
+#define SOC_EFUSE_DIS_PAD_JTAG 1
+#define SOC_EFUSE_DIS_USB_JTAG 1
+#define SOC_EFUSE_DIS_DIRECT_BOOT 1
+#define SOC_EFUSE_SOFT_DIS_JTAG 1
+#define SOC_EFUSE_BLOCK9_KEY_PURPOSE_QUIRK 1  // AES-XTS and ECDSA key purposes not supported for this block
+
 /*-------------------------- Secure Boot CAPS----------------------------*/
 #define SOC_SECURE_BOOT_V2_RSA              1
 #define SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS   3
@@ -349,12 +358,12 @@
 #define SOC_MAC_BB_PD_MEM_SIZE          (192*4)
 
 /*-------------------------- Power Management CAPS ----------------------------*/
-
 #define SOC_PM_SUPPORT_BT_WAKEUP        (1)
 
 #define SOC_PM_SUPPORT_CPU_PD           (1)
-
 #define SOC_PM_SUPPORT_BT_PD            (1)
+
+#define SOC_PM_SUPPORT_DEEPSLEEP_CHECK_STUB_ONLY   (1) /*!<Supports CRC only the stub code in RTC memory */
 
 /*-------------------------- Temperature Sensor CAPS -------------------------------------*/
 #define SOC_TEMPERATURE_SENSOR_SUPPORT_FAST_RC                (1)
@@ -364,3 +373,5 @@
 #define SOC_BLE_SUPPORTED               (1)    /*!< Support Bluetooth Low Energy hardware */
 #define SOC_BLE_MESH_SUPPORTED          (1)    /*!< Support BLE MESH */
 #define SOC_ESP_NIMBLE_CONTROLLER       (1)    /*!< Support BLE EMBEDDED controller V1 */
+#define SOC_BLE_50_SUPPORTED            (1)    /*!< Support Bluetooth 5.0 */
+#define SOC_BLE_DEVICE_PRIVACY_SUPPORTED (1)   /*!< Support BLE device privacy mode */

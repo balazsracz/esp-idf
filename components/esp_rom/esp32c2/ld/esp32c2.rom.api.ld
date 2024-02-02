@@ -28,6 +28,7 @@ PROVIDE ( esp_rom_uart_tx_one_char    = uart_tx_one_char );
 PROVIDE ( esp_rom_uart_tx_wait_idle   = uart_tx_wait_idle );
 PROVIDE ( esp_rom_uart_rx_one_char    = uart_rx_one_char );
 PROVIDE ( esp_rom_uart_rx_string      = UartRxString );
+PROVIDE ( esp_rom_uart_set_as_console = uart_tx_switch );
 PROVIDE ( esp_rom_uart_putc           = ets_write_char_uart );
 
 PROVIDE ( esp_rom_mbedtls_md5_starts_ret = mbedtls_md5_starts_ret );
@@ -35,6 +36,7 @@ PROVIDE ( esp_rom_mbedtls_md5_update_ret = mbedtls_md5_update_ret );
 PROVIDE ( esp_rom_mbedtls_md5_finish_ret = mbedtls_md5_finish_ret );
 
 PROVIDE ( esp_rom_printf   = ets_printf );
+PROVIDE ( esp_rom_install_uart_printf = ets_install_uart_printf );
 PROVIDE ( esp_rom_delay_us = ets_delay_us );
 PROVIDE ( esp_rom_get_reset_reason = rtc_get_reset_reason );
 PROVIDE ( esp_rom_route_intr_matrix = intr_matrix_set );

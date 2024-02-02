@@ -11,11 +11,11 @@ config ESP_ROM_HAS_CRC_BE
     bool
     default y
 
-config ESP_ROM_HAS_JPEG_DECODE
+config ESP_ROM_HAS_MZ_CRC32
     bool
     default y
 
-config ESP_ROM_SUPPORT_MULTIPLE_UART
+config ESP_ROM_HAS_JPEG_DECODE
     bool
     default y
 

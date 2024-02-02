@@ -181,6 +181,27 @@ void BTA_DmSetDeviceName(const char *p_name)
     }
 }
 
+/*******************************************************************************
+**
+** Function         BTA_DmGetDeviceName
+**
+** Description      This function gets the Bluetooth name of local device
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void BTA_DmGetDeviceName(tBTA_GET_DEV_NAME_CBACK *p_cback)
+{
+    tBTA_DM_API_GET_NAME *p_msg;
+
+    if ((p_msg = (tBTA_DM_API_GET_NAME *) osi_malloc(sizeof(tBTA_DM_API_GET_NAME))) != NULL) {
+        p_msg->hdr.event = BTA_DM_API_GET_NAME_EVT;
+        p_msg->p_cback = p_cback;
+        bta_sys_sendmsg(p_msg);
+    }
+}
+
 #if (CLASSIC_BT_INCLUDED == TRUE)
 
 void BTA_DmConfigEir(tBTA_DM_EIR_CONF *eir_config)
@@ -205,6 +226,7 @@ void BTA_DmConfigEir(tBTA_DM_EIR_CONF *eir_config)
         p_msg->hdr.event = BTA_DM_API_CONFIG_EIR_EVT;
 
         p_msg->eir_fec_required = eir_config->bta_dm_eir_fec_required;
+        p_msg->eir_included_name = eir_config->bta_dm_eir_included_name;
         p_msg->eir_included_tx_power = eir_config->bta_dm_eir_included_tx_power;
         p_msg->eir_included_uuid = eir_config->bta_dm_eir_included_uuid;
         p_msg->eir_flags = eir_config->bta_dm_eir_flags;
@@ -303,26 +325,26 @@ void BTA_DmBleSetChannels(const uint8_t *channels, tBTA_CMPL_CB  *set_channels_c
 
 }
 
-void BTA_DmUpdateWhiteList(BOOLEAN add_remove,  BD_ADDR remote_addr, tBLE_ADDR_TYPE addr_type, tBTA_ADD_WHITELIST_CBACK *add_wl_cb)
+void BTA_DmUpdateWhiteList(BOOLEAN add_remove,  BD_ADDR remote_addr, tBLE_ADDR_TYPE addr_type, tBTA_UPDATE_WHITELIST_CBACK *update_wl_cb)
 {
     tBTA_DM_API_UPDATE_WHITE_LIST *p_msg;
     if ((p_msg = (tBTA_DM_API_UPDATE_WHITE_LIST *)osi_malloc(sizeof(tBTA_DM_API_UPDATE_WHITE_LIST))) != NULL) {
         p_msg->hdr.event = BTA_DM_API_UPDATE_WHITE_LIST_EVT;
         p_msg->add_remove = add_remove;
         p_msg->addr_type = addr_type;
-        p_msg->add_wl_cb = add_wl_cb;
+        p_msg->update_wl_cb = update_wl_cb;
         memcpy(p_msg->remote_addr, remote_addr, sizeof(BD_ADDR));
 
         bta_sys_sendmsg(p_msg);
     }
 }
 
-void BTA_DmClearWhiteList(void)
+void BTA_DmClearWhiteList(tBTA_UPDATE_WHITELIST_CBACK *update_wl_cb)
 {
-    tBTA_DM_API_ENABLE *p_msg;
-    if ((p_msg = (tBTA_DM_API_ENABLE *)osi_malloc(sizeof(tBTA_DM_API_ENABLE))) != NULL) {
+    tBTA_DM_API_UPDATE_WHITE_LIST *p_msg;
+    if ((p_msg = (tBTA_DM_API_UPDATE_WHITE_LIST *)osi_malloc(sizeof(tBTA_DM_API_UPDATE_WHITE_LIST))) != NULL) {
         p_msg->hdr.event = BTA_DM_API_CLEAR_WHITE_LIST_EVT;
-        p_msg->p_sec_cback = NULL;
+        p_msg->update_wl_cb = update_wl_cb;
 
         bta_sys_sendmsg(p_msg);
     }
@@ -666,6 +688,7 @@ void BTA_DmOobReply(BD_ADDR bd_addr, UINT8 len, UINT8 *p_value)
     if ((p_msg = (tBTA_DM_API_OOB_REPLY *) osi_malloc(sizeof(tBTA_DM_API_OOB_REPLY))) != NULL) {
         p_msg->hdr.event = BTA_DM_API_OOB_REPLY_EVT;
         if(p_value == NULL || len > BT_OCTET16_LEN) {
+            osi_free(p_msg);
             return;
         }
         memcpy(p_msg->bd_addr, bd_addr, BD_ADDR_LEN);
@@ -2782,7 +2805,7 @@ void BTA_DmBleGapConfigExtAdvDataRaw(BOOLEAN is_scan_rsp, UINT8 instance, UINT16
         p_msg->is_scan_rsp = is_scan_rsp;
         p_msg->instance = instance;
         p_msg->length = length;
-        p_msg->data = (UINT8 *)(p_msg + 1);
+        p_msg->data = length != 0 ? (UINT8 *)(p_msg + 1) : NULL;
         if (data) {
             memcpy(p_msg->data, data, length);
         }
@@ -2872,6 +2895,7 @@ void BTA_DmBleGapPeriodicAdvCfgDataRaw(UINT8 instance, UINT16 length,
         p_msg->length = length;
         p_msg->data = (UINT8 *)(p_msg + 1);
         memcpy(p_msg->data, data, length);
+        p_msg->data = length != 0 ? (UINT8 *)(p_msg + 1) : NULL;
         //start sent the msg to the bta system control moudle
         bta_sys_sendmsg(p_msg);
     } else {

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2022-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -35,22 +35,17 @@
 #include "hal/systimer_hal.h"
 #include "hal/systimer_ll.h"
 #endif
-
 #ifdef CONFIG_PM_TRACE
 #include "esp_private/pm_trace.h"
 #endif //CONFIG_PM_TRACE
 
-#ifdef CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
-#include "esp_gdbstub.h"
-#endif // CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
+_Static_assert(portBYTE_ALIGNMENT == 16, "portBYTE_ALIGNMENT must be set to 16");
 
 /* ---------------------------------------------------- Variables ------------------------------------------------------
  *
  * ------------------------------------------------------------------------------------------------------------------ */
 
-static const char *TAG = "cpu_start"; // [refactor-todo]: might be appropriate to change in the future, but
-
-BaseType_t uxSchedulerRunning = 0;
+BaseType_t uxSchedulerRunning = 0;  // Duplicate of xSchedulerRunning, accessible to port files
 volatile UBaseType_t uxInterruptNesting = 0;
 portMUX_TYPE port_xTaskLock = portMUX_INITIALIZER_UNLOCKED;
 portMUX_TYPE port_xISRLock = portMUX_INITIALIZER_UNLOCKED;
@@ -107,7 +102,16 @@ void vPortSetStackWatchpoint(void *pxStackStart)
 
 BaseType_t xPortSysTickHandler(void);
 
-#if CONFIG_FREERTOS_SYSTICK_USES_SYSTIMER
+#ifdef CONFIG_FREERTOS_SYSTICK_USES_CCOUNT
+
+#ifdef CONFIG_FREERTOS_CORETIMER_0
+    #define SYSTICK_INTR_ID (ETS_INTERNAL_TIMER0_INTR_SOURCE+ETS_INTERNAL_INTR_SOURCE_OFF)
+#endif
+#ifdef CONFIG_FREERTOS_CORETIMER_1
+    #define SYSTICK_INTR_ID (ETS_INTERNAL_TIMER1_INTR_SOURCE+ETS_INTERNAL_INTR_SOURCE_OFF)
+#endif
+
+#elif CONFIG_FREERTOS_SYSTICK_USES_SYSTIMER
 
 _Static_assert(SOC_CPU_CORES_NUM <= SOC_SYSTIMER_ALARM_NUM - 1, "the number of cores must match the number of core alarms in SYSTIMER");
 
@@ -149,7 +153,10 @@ void vPortSetupTimer(void)
         systimer_ll_apply_counter_value(systimer_hal.dev, SYSTIMER_LL_COUNTER_OS_TICK);
 
         for (cpuid = 0; cpuid < SOC_CPU_CORES_NUM; cpuid++) {
+            // Set stall option and alarm mode to default state. Below they will be set to a required state.
             systimer_hal_counter_can_stall_by_cpu(&systimer_hal, SYSTIMER_LL_COUNTER_OS_TICK, cpuid, false);
+            uint32_t alarm_id = SYSTIMER_LL_ALARM_OS_TICK_CORE0 + cpuid;
+            systimer_hal_select_alarm_mode(&systimer_hal, alarm_id, SYSTIMER_ALARM_MODE_ONESHOT);
         }
 
         for (cpuid = 0; cpuid < portNUM_PROCESSORS; ++cpuid) {
@@ -215,83 +222,7 @@ IRAM_ATTR void SysTickIsrHandler(void *arg)
 
 #endif // CONFIG_FREERTOS_SYSTICK_USES_SYSTIMER
 
-// --------------------- App Start-up ----------------------
 
-extern void app_main(void);
-
-static void main_task(void *args)
-{
-#if !CONFIG_FREERTOS_UNICORE
-    // Wait for FreeRTOS initialization to finish on APP CPU, before replacing its startup stack
-    while (uxSchedulerRunning == 0) {
-        ;
-    }
-#endif
-
-    // [refactor-todo] check if there is a way to move the following block to esp_system startup
-    heap_caps_enable_nonos_stack_heaps();
-
-    // Now we have startup stack RAM available for heap, enable any DMA pool memory
-#if CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL
-    if (g_spiram_ok) {
-        esp_err_t r = esp_spiram_reserve_dma_pool(CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL);
-        if (r != ESP_OK) {
-            ESP_EARLY_LOGE(TAG, "Could not reserve internal/DMA pool (error 0x%x)", r);
-            abort();
-        }
-    }
-#endif
-
-    //Initialize task wdt if configured to do so
-#if CONFIG_ESP_TASK_WDT
-    esp_task_wdt_config_t twdt_config = {
-        .timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000,
-        .idle_core_mask = 0,
-#if CONFIG_ESP_TASK_WDT_PANIC
-        .trigger_panic = true,
-#endif
-    };
-#if CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0
-    twdt_config.idle_core_mask |= (1 << 0);
-#endif
-#if CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1
-    twdt_config.idle_core_mask |= (1 << 1);
-#endif
-    ESP_ERROR_CHECK(esp_task_wdt_init(&twdt_config));
-#endif // CONFIG_ESP_TASK_WDT
-
-    app_main();
-    vTaskDelete(NULL);
-}
-
-void esp_startup_start_app_common(void)
-{
-#if CONFIG_ESP_INT_WDT
-    esp_int_wdt_init();
-    //Initialize the interrupt watch dog for CPU0.
-    esp_int_wdt_cpu_init();
-#endif
-
-    esp_crosscore_int_init();
-
-#ifdef CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
-    esp_gdbstub_init();
-#endif // CONFIG_ESP_SYSTEM_GDBSTUB_RUNTIME
-
-    portBASE_TYPE res = xTaskCreatePinnedToCore(main_task, "main",
-                                                ESP_TASK_MAIN_STACK, NULL,
-                                                ESP_TASK_MAIN_PRIO, NULL, ESP_TASK_MAIN_CORE);
-    assert(res == pdTRUE);
-    (void)res;
-}
-
-void esp_startup_start_app(void)
-{
-    esp_startup_start_app_common();
-
-    ESP_LOGI(TAG, "Starting scheduler.");
-    vTaskStartScheduler();
-}
 
 /* ---------------------------------------------- Port Implementations -------------------------------------------------
  * Implementations of Porting Interface functions
@@ -457,77 +388,30 @@ void vPortFreeStack( void *pv )
 }
 #endif
 
-#if ( configSUPPORT_STATIC_ALLOCATION == 1 )
-void vApplicationGetIdleTaskMemory(StaticTask_t **ppxIdleTaskTCBBuffer,
-                                   StackType_t **ppxIdleTaskStackBuffer,
-                                   uint32_t *pulIdleTaskStackSize )
-{
-    StackType_t *pxStackBufferTemp;
-    StaticTask_t *pxTCBBufferTemp;
-    /* Stack always grows downwards (from high address to low address) on all
-     * ESP RISC-V targets. Given that the heap allocator likely allocates memory
-     * from low to high address, we allocate the stack first and then the TCB so
-     * that the stack does not grow downwards into the TCB.
-     *
-     * Allocate TCB and stack buffer in internal memory. */
-    pxStackBufferTemp = pvPortMalloc(CONFIG_FREERTOS_IDLE_TASK_STACKSIZE);
-    pxTCBBufferTemp = pvPortMalloc(sizeof(StaticTask_t));
-    assert(pxStackBufferTemp != NULL);
-    assert(pxTCBBufferTemp != NULL);
-    // Write back pointers
-    *ppxIdleTaskStackBuffer = pxStackBufferTemp;
-    *ppxIdleTaskTCBBuffer = pxTCBBufferTemp;
-    *pulIdleTaskStackSize = CONFIG_FREERTOS_IDLE_TASK_STACKSIZE;
-}
-
-void vApplicationGetTimerTaskMemory(StaticTask_t **ppxTimerTaskTCBBuffer,
-                                    StackType_t **ppxTimerTaskStackBuffer,
-                                    uint32_t *pulTimerTaskStackSize )
-{
-    StackType_t *pxStackBufferTemp;
-    StaticTask_t *pxTCBBufferTemp;
-    /* Stack always grows downwards (from high address to low address) on all
-     * ESP RISC-V targets. Given that the heap allocator likely allocates memory
-     * from low to high address, we allocate the stack first and then the TCB so
-     * that the stack does not grow downwards into the TCB.
-     *
-     * Allocate TCB and stack buffer in internal memory. */
-    pxStackBufferTemp = pvPortMalloc(configTIMER_TASK_STACK_DEPTH);
-    pxTCBBufferTemp = pvPortMalloc(sizeof(StaticTask_t));
-    assert(pxStackBufferTemp != NULL);
-    assert(pxTCBBufferTemp != NULL);
-    // Write back pointers
-    *ppxTimerTaskStackBuffer = pxStackBufferTemp;
-    *ppxTimerTaskTCBBuffer = pxTCBBufferTemp;
-    *pulTimerTaskStackSize = configTIMER_TASK_STACK_DEPTH;
-}
-#endif //( configSUPPORT_STATIC_ALLOCATION == 1 )
-
 // ------------------------ Stack --------------------------
-
-__attribute__((noreturn)) static void _prvTaskExitError(void)
+#if CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
+/**
+ * Wrapper to allow task functions to return. Force the optimization option -O1 on that function to make sure there
+ * is no tail-call. Indeed, we need the compiler to keep the return address to this function when calling `panic_abort`.
+ *
+ * Thanks to `naked` attribute, the compiler won't generate a prologue and epilogue for the function, which saves time
+ * and stack space.
+ */
+static void __attribute__((optimize("O1"), naked)) vPortTaskWrapper(TaskFunction_t pxCode, void *pvParameters)
 {
-    /* A function that implements a task must not exit or attempt to return to
-    its caller as there is nothing to return to.  If a task wants to exit it
-    should instead call vTaskDelete( NULL ).
-
-    Artificially force an assert() to be triggered if configASSERT() is
-    defined, then stop here so application writers can catch the error. */
-    portDISABLE_INTERRUPTS();
-    abort();
+    asm volatile(".cfi_undefined ra\n");
+    extern void __attribute__((noreturn)) panic_abort(const char *details);
+    static char DRAM_ATTR msg[80] = "FreeRTOS: FreeRTOS Task \"\0";
+    pxCode(pvParameters);
+    //FreeRTOS tasks should not return. Log the task name and abort.
+    char *pcTaskName = pcTaskGetName(NULL);
+    /* We cannot use s(n)printf because it is in flash */
+    strcat(msg, pcTaskName);
+    strcat(msg, "\" should not return, Aborting now!");
+    panic_abort(msg);
 }
+#endif // CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
 
-__attribute__((naked)) static void prvTaskExitError(void)
-{
-    asm volatile(".option push\n" \
-                 ".option norvc\n" \
-                 "nop\n" \
-                 ".option pop");
-    /* Task entry's RA will point here. Shifting RA into prvTaskExitError is necessary
-       to make GDB backtrace ending inside that function.
-       Otherwise backtrace will end in the function laying just before prvTaskExitError in address space. */
-    _prvTaskExitError();
-}
 
 StackType_t *pxPortInitialiseStack(StackType_t *pxTopOfStack, TaskFunction_t pxCode, void *pvParameters)
 {
@@ -591,15 +475,21 @@ StackType_t *pxPortInitialiseStack(StackType_t *pxTopOfStack, TaskFunction_t pxC
     sp -= RV_STK_FRMSZ;
     RvExcFrame *frame = (RvExcFrame *)sp;
     memset(frame, 0, sizeof(*frame));
-    /* Shifting RA into prvTaskExitError is necessary to make GDB backtrace ending inside that function.
-       Otherwise backtrace will end in the function laying just before prvTaskExitError in address space. */
-    frame->ra = (UBaseType_t)prvTaskExitError + 4/*size of the nop insruction at the beginning of prvTaskExitError*/;
-    frame->mepc = (UBaseType_t)pxCode;
-    frame->a0 = (UBaseType_t)pvParameters;
+
+    /* Initialize the stack frame. */
+    #if CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
+        frame->mepc = (UBaseType_t)vPortTaskWrapper;
+        frame->a0 = (UBaseType_t)pxCode;
+        frame->a1 = (UBaseType_t)pvParameters;
+    #else
+        frame->mepc = (UBaseType_t)pxCode;
+        frame->a0 = (UBaseType_t)pvParameters;
+    #endif // CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
     frame->gp = (UBaseType_t)&__global_pointer$;
     frame->tp = (UBaseType_t)threadptr;
 
     //TODO: IDF-2393
+    configASSERT(((uint32_t) frame & portBYTE_ALIGNMENT_MASK) == 0);
     return (StackType_t *)frame;
 }
 

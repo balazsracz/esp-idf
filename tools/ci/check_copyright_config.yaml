@@ -68,6 +68,16 @@ lwip_component:
     - BSD-3-Clause
   license_for_new_files: Apache-2.0
 
+mqtt_component:
+  include:
+    - 'components/mqtt/**'
+  allowed_licenses:
+    - Apache-2.0
+    - BSD-3-Clause
+    - Unlicense
+    - CC0-1.0
+  license_for_new_files: Apache-2.0
+
 newlib_component:
   include:
     - 'components/newlib/platform_include/**'
@@ -143,7 +153,18 @@ tinyusb:
     - 'examples/peripherals/usb/device/tusb_midi/'
   allowed_licenses:
     - Apache-2.0
-    - MIT
+    - MIT           # Example derived from TinyUSB code by HaThach
+    - Unlicense
+    - CC0-1.0
+
+# Portions of the USB stack in ROM are derived from Zephyr project,
+# with files licensed under a mix of Apache and BSD-3-Clause licenses.
+esp_rom_usb:
+  include:
+    - 'components/esp_rom/include/*/rom/usb/'
+  allowed_licenses:
+    - Apache-2.0
+    - BSD-3-Clause
 
 # files matching this section do not perform the check
 # file patterns starting with ! are negated, meaning files matching them won't match the section.

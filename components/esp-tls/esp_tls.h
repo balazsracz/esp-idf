@@ -14,6 +14,8 @@
 #include "mbedtls/ssl.h"
 #ifdef CONFIG_ESP_TLS_SERVER_SESSION_TICKETS
 #include "mbedtls/ssl_ticket.h"
+#include "mbedtls/entropy.h"
+#include "mbedtls/ctr_drbg.h"
 #endif
 #elif CONFIG_ESP_TLS_USING_WOLFSSL
 #include "wolfssl/wolfcrypt/settings.h"
@@ -68,6 +70,15 @@ typedef struct tls_keep_alive_cfg {
     int keep_alive_interval;              /*!< Keep-alive interval time (second) */
     int keep_alive_count;                 /*!< Keep-alive packet retry send count */
 } tls_keep_alive_cfg_t;
+
+/*
+* @brief ESP-TLS Address families
+*/
+typedef enum esp_tls_addr_family {
+    ESP_TLS_AF_UNSPEC = 0,                /**< Unspecified address family. */
+    ESP_TLS_AF_INET,                      /**< IPv4 address family. */
+    ESP_TLS_AF_INET6,                     /**< IPv6 address family. */
+} esp_tls_addr_family_t;
 
 /**
  * @brief      ESP-TLS configuration parameters
@@ -180,6 +191,8 @@ typedef struct esp_tls_cfg {
 #ifdef CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS
     esp_tls_client_session_t *client_session; /*! Pointer for the client session ticket context. */
 #endif /* CONFIG_ESP_TLS_CLIENT_SESSION_TICKETS */
+
+    esp_tls_addr_family_t addr_family;      /*!< The address family to use when connecting to a host. */
 } esp_tls_cfg_t;
 
 #ifdef CONFIG_ESP_TLS_SERVER
@@ -196,6 +209,18 @@ typedef struct esp_tls_server_session_ticket_ctx {
     mbedtls_ssl_ticket_context ticket_ctx;                                     /*!< Session ticket generation context */
 } esp_tls_server_session_ticket_ctx_t;
 #endif
+
+
+/**
+ * @brief tls handshake callback
+ * Can be used to configure per-handshake attributes for the TLS connection.
+ * E.g. Client certificate / Key, Authmode, Client CA verification, etc.
+ *
+ * @param ssl mbedtls_ssl_context that can be used for changing settings
+ * @return The reutn value of the callback must be 0 if successful,
+ *         or a specific MBEDTLS_ERR_XXX code, which will cause the handhsake to abort
+ */
+typedef mbedtls_ssl_hs_cb_t esp_tls_handshake_callback;
 
 typedef struct esp_tls_cfg_server {
     const char **alpn_protos;                   /*!< Application protocols required for HTTP2.
@@ -259,6 +284,15 @@ typedef struct esp_tls_cfg_server {
                                                     Call esp_tls_cfg_server_session_tickets_free
                                                     to free the data associated with this context. */
 #endif
+
+    void *userdata;                             /*!< User data to be added to the ssl context.
+                                                  Can be retrieved by callbacks */
+#if defined(CONFIG_ESP_TLS_SERVER_CERT_SELECT_HOOK)
+    esp_tls_handshake_callback cert_select_cb;  /*!< Certificate selection callback that gets called after ClientHello is processed.
+                                                     Can be used as an SNI callback, but also has access to other
+                                                     TLS extensions, such as ALPN and server_certificate_type . */
+#endif
+
 } esp_tls_cfg_server_t;
 
 /**

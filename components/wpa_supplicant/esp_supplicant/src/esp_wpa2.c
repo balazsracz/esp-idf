@@ -1,11 +1,11 @@
 /*
- * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <string.h>
-
+#include <inttypes.h>
 #include "esp_err.h"
 
 #include "utils/includes.h"
@@ -36,6 +36,7 @@
 #include "esp_crt_bundle.h"
 #endif
 #include "esp_wpas_glue.h"
+#include "esp_wpa2_i.h"
 
 #define WPA2_VERSION    "v2.0"
 
@@ -63,6 +64,7 @@ static int wpa2_start_eapol_internal(void);
 int wpa2_post(uint32_t sig, uint32_t par);
 
 #ifdef USE_WPA2_TASK
+#define WPA2_TASK_PRIORITY 7
 static void *s_wpa2_task_hdl = NULL;
 static void *s_wpa2_queue = NULL;
 static wpa2_state_t s_wpa2_state = WPA2_STATE_DISABLED;
@@ -113,6 +115,15 @@ static void wpa2_set_eap_state(wpa2_ent_eap_state_t state)
 
     gEapSm->finish_state = state;
     esp_wifi_set_wpa2_ent_state_internal(state);
+}
+
+wpa2_ent_eap_state_t wpa2_get_eap_state(void)
+{
+    if (!gEapSm) {
+        return WPA2_ENT_EAP_STATE_NOT_START;
+    }
+
+    return gEapSm->finish_state;
 }
 
 static inline void wpa2_task_delete(void *arg)
@@ -199,7 +210,7 @@ void wpa2_task(void *pvParameters )
                 if(sm->wpa2_sig_cnt[e->sig]) {
                     sm->wpa2_sig_cnt[e->sig]--;
                 } else {
-                    wpa_printf(MSG_ERROR, "wpa2_task: invalid sig cnt, sig=%d cnt=%d", e->sig, sm->wpa2_sig_cnt[e->sig]);
+                    wpa_printf(MSG_ERROR, "wpa2_task: invalid sig cnt, sig=%" PRId32 " cnt=%d", e->sig, sm->wpa2_sig_cnt[e->sig]);
                 }
                 DATA_MUTEX_GIVE();
             }
@@ -230,7 +241,7 @@ void wpa2_task(void *pvParameters )
             break;
         } else {
             if (s_wifi_wpa2_sync_sem) {
-                wpa_printf(MSG_DEBUG, "WPA2: wifi->wpa2 api completed sig(%d)", e->sig);
+                wpa_printf(MSG_DEBUG, "WPA2: wifi->wpa2 api completed sig(%" PRId32 ")", e->sig);
                 os_semphr_give(s_wifi_wpa2_sync_sem);
             } else {
                 wpa_printf(MSG_ERROR, "WPA2: null wifi->wpa2 sync sem");
@@ -243,7 +254,7 @@ void wpa2_task(void *pvParameters )
     wpa_printf(MSG_DEBUG, "WPA2: task deleted");
     s_wpa2_queue = NULL;
     if (s_wifi_wpa2_sync_sem) {
-        wpa_printf(MSG_DEBUG, "WPA2: wifi->wpa2 api completed sig(%d)", e->sig);
+        wpa_printf(MSG_DEBUG, "WPA2: wifi->wpa2 api completed sig(%" PRId32 ")", e->sig);
         os_semphr_give(s_wifi_wpa2_sync_sem);
     } else {
         wpa_printf(MSG_ERROR, "WPA2: null wifi->wpa2 sync sem");
@@ -385,10 +396,10 @@ int eap_sm_process_request(struct eap_sm *sm, struct wpabuf *reqData)
         }
 
         if (!eap_sm_allowMethod(sm, reqVendor, reqVendorMethod)) {
-            wpa_printf(MSG_DEBUG, "EAP: vendor %u method %u not allowed",
+            wpa_printf(MSG_DEBUG, "EAP: vendor %" PRIu32 " method %" PRIu32 " not allowed",
                     reqVendor, reqVendorMethod);
             wpa_msg(sm->msg_ctx, MSG_INFO, WPA_EVENT_EAP_PROPOSED_METHOD
-                    "vendor=%u method=%u -> NAK",
+                    "vendor=%" PRIu32 " method=%" PRIu32 " -> NAK",
                     reqVendor, reqVendorMethod);
             goto build_nak;
         }
@@ -538,7 +549,7 @@ static int eap_sm_rx_eapol_internal(u8 *src_addr, u8 *buf, u32 len, uint8_t *bss
     data_len = plen + sizeof(*hdr);
 
 #ifdef DEBUG_PRINT
-    wpa_printf(MSG_DEBUG, "IEEE 802.1X RX: version=%d type=%d length=%d\n",
+    wpa_printf(MSG_DEBUG, "IEEE 802.1X RX: version=%d type=%d length=%" PRId32 "",
                hdr->version, hdr->type, plen);
 #endif
     if (hdr->version < EAPOL_VERSION) {
@@ -724,7 +735,7 @@ static int eap_peer_sm_init(void)
     gEapSm = sm;
 #ifdef USE_WPA2_TASK
     s_wpa2_queue = os_queue_create(SIG_WPA2_MAX, sizeof(s_wpa2_queue));
-    ret = os_task_create(wpa2_task, "wpa2T", WPA2_TASK_STACK_SIZE, NULL, 2, &s_wpa2_task_hdl);
+    ret = os_task_create(wpa2_task, "wpa2T", WPA2_TASK_STACK_SIZE, NULL, WPA2_TASK_PRIORITY, &s_wpa2_task_hdl);
     if (ret != TRUE) {
         wpa_printf(MSG_ERROR, "wps enable: failed to create task");
         ret = ESP_FAIL;
@@ -737,7 +748,7 @@ static int eap_peer_sm_init(void)
         goto _err;
     }
 
-    wpa_printf(MSG_INFO, "wpa2_task prio:%d, stack:%d\n", 2, WPA2_TASK_STACK_SIZE);
+    wpa_printf(MSG_INFO, "wpa2_task prio:%d, stack:%d\n", WPA2_TASK_PRIORITY, WPA2_TASK_STACK_SIZE);
 #endif
     return ESP_OK;
 
@@ -827,6 +838,7 @@ esp_err_t esp_wifi_sta_wpa2_ent_enable(void)
 {
     wifi_wpa2_param_t param;
     esp_err_t ret;
+    struct wpa_sm *sm = &gWpaSm;
 
     wpa2_api_lock();
 
@@ -843,6 +855,7 @@ esp_err_t esp_wifi_sta_wpa2_ent_enable(void)
 
     if (ESP_OK == ret) {
         wpa2_set_state(WPA2_STATE_ENABLED);
+        sm->wpa_sm_wpa2_ent_disable = esp_wifi_sta_wpa2_ent_disable;
     } else {
         wpa_printf(MSG_ERROR, "failed to enable wpa2 ret=%d", ret);
     }
@@ -854,6 +867,7 @@ esp_err_t esp_wifi_sta_wpa2_ent_enable(void)
 
 esp_err_t esp_wifi_sta_wpa2_ent_disable_fn(void *param)
 {
+    struct wpa_sm *sm = &gWpaSm;
     wpa_printf(MSG_INFO, "WPA2 ENTERPRISE VERSION: [%s] disable\n", WPA2_VERSION);
     esp_wifi_unregister_wpa2_cb_internal();
 
@@ -865,6 +879,7 @@ esp_err_t esp_wifi_sta_wpa2_ent_disable_fn(void *param)
     eap_peer_unregister_methods();
 #endif
 
+    sm->wpa_sm_wpa2_ent_disable = NULL;
     return ESP_OK;
 }
 

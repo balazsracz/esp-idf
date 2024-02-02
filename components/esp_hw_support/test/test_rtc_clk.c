@@ -200,7 +200,7 @@ TEST_CASE("Test fast switching between PLL and XTAL", "[rtc_clk]")
 
 /* In CI environments, the 32kXTAL runners don't have 8MB psram for bank switching.
    So can only test one config or the other. */
-#if !IDF_CI_BUILD || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
+#if !defined(CONFIG_IDF_CI_BUILD) || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
 
 #define COUNT_TEST      3
 #define TIMEOUT_TEST_MS (5 + CONFIG_RTC_CLK_CAL_CYCLES / 16)
@@ -345,12 +345,10 @@ TEST_CASE("Test starting 'External 32kHz XTAL' on the board without it.", "[rtc_
     start_freq(SOC_RTC_SLOW_CLK_SRC_RC_SLOW, 0);
 }
 
-#endif // !IDF_CI_BUILD || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
+#endif // !defined(CONFIG_IDF_CI_BUILD) || !CONFIG_SPIRAM_BANKSWITCH_ENABLE
 
 #endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S2, ESP32S3, ESP32C3)
 
-#if !TEMPORARY_DISABLED_FOR_TARGETS(ESP32C2)
-//IDF-5060
 TEST_CASE("Test rtc clk calibration compensation", "[rtc_clk]")
 {
     int64_t t1 = esp_rtc_get_time_us();
@@ -432,4 +430,3 @@ static void check_time_deepsleep_2(void)
 TEST_CASE_MULTIPLE_STAGES("Test rtc clk calibration compensation across deep sleep", "[rtc_clk][reset=DEEPSLEEP_RESET, DEEPSLEEP_RESET]", trigger_deepsleep, check_time_deepsleep_1, check_time_deepsleep_2);
 
 #endif // !TEMPORARY_DISABLED_FOR_TARGETS(ESP32S3)
-#endif //!TEMPORARY_DISABLED_FOR_TARGETS(ESP32C2)

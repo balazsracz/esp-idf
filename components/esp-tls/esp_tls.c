@@ -73,6 +73,8 @@ static const char *TAG = "esp-tls";
 #error "No TLS stack configured"
 #endif
 
+#define ESP_TLS_DEFAULT_CONN_TIMEOUT  (10)  /*!< Default connection timeout in seconds */
+
 static esp_err_t create_ssl_handle(const char *hostname, size_t hostlen, const void *cfg, esp_tls_t *tls)
 {
     return _esp_create_ssl_handle(hostname, hostlen, cfg, tls);
@@ -139,12 +141,24 @@ esp_tls_t *esp_tls_init(void)
     return tls;
 }
 
-static esp_err_t esp_tls_hostname_to_fd(const char *host, size_t hostlen, int port, struct sockaddr_storage *address, int* fd)
+static esp_err_t esp_tls_hostname_to_fd(const char *host, size_t hostlen, int port, esp_tls_addr_family_t addr_family, struct sockaddr_storage *address, int* fd)
 {
     struct addrinfo *address_info;
     struct addrinfo hints;
     memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_UNSPEC;
+
+    switch (addr_family) {
+        case ESP_TLS_AF_INET:
+            hints.ai_family = AF_INET;
+            break;
+        case ESP_TLS_AF_INET6:
+            hints.ai_family = AF_INET6;
+            break;
+        default:
+            hints.ai_family = AF_UNSPEC;
+            break;
+    }
+
     hints.ai_socktype = SOCK_STREAM;
 
     char *use_host = strndup(host, hostlen);
@@ -203,18 +217,22 @@ static void ms_to_timeval(int timeout_ms, struct timeval *tv)
 static esp_err_t esp_tls_set_socket_options(int fd, const esp_tls_cfg_t *cfg)
 {
     if (cfg) {
-        if (cfg->timeout_ms >= 0) {
-            struct timeval tv;
+        struct timeval tv = {};
+        if (cfg->timeout_ms > 0) {
             ms_to_timeval(cfg->timeout_ms, &tv);
-            if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0) {
-                ESP_LOGE(TAG, "Fail to setsockopt SO_RCVTIMEO");
-                return ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED;
-            }
-            if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) {
-                ESP_LOGE(TAG, "Fail to setsockopt SO_SNDTIMEO");
-                return ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED;
-            }
+        } else {
+            tv.tv_sec = ESP_TLS_DEFAULT_CONN_TIMEOUT;
+            tv.tv_usec = 0;
         }
+        if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) != 0) {
+            ESP_LOGE(TAG, "Fail to setsockopt SO_RCVTIMEO");
+            return ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED;
+        }
+        if (setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)) != 0) {
+            ESP_LOGE(TAG, "Fail to setsockopt SO_SNDTIMEO");
+            return ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED;
+        }
+
         if (cfg->keep_alive_cfg && cfg->keep_alive_cfg->keep_alive_enable) {
             int keep_alive_enable = 1;
             int keep_alive_idle = cfg->keep_alive_cfg->keep_alive_idle;
@@ -277,7 +295,9 @@ static inline esp_err_t tcp_connect(const char *host, int hostlen, int port, con
 {
     struct sockaddr_storage address;
     int fd;
-    esp_err_t ret = esp_tls_hostname_to_fd(host, hostlen, port, &address, &fd);
+
+    esp_tls_addr_family_t addr_family = (cfg != NULL) ? cfg->addr_family : ESP_TLS_AF_UNSPEC;
+    esp_err_t ret = esp_tls_hostname_to_fd(host, hostlen, port, addr_family, &address, &fd);
     if (ret != ESP_OK) {
         ESP_INT_EVENT_TRACKER_CAPTURE(error_handle, ESP_TLS_ERR_TYPE_SYSTEM, errno);
         return ret;
@@ -300,7 +320,7 @@ static inline esp_err_t tcp_connect(const char *host, int hostlen, int port, con
     if (connect(fd, (struct sockaddr *)&address, sizeof(struct sockaddr)) < 0) {
         if (errno == EINPROGRESS) {
             fd_set fdset;
-            struct timeval tv = { .tv_usec = 0, .tv_sec = 10 }; // Default connection timeout is 10 s
+            struct timeval tv = { .tv_usec = 0, .tv_sec = ESP_TLS_DEFAULT_CONN_TIMEOUT }; // Default connection timeout is 10 s
 
             if (cfg && cfg->non_block) {
                 // Non-blocking mode -> just return successfully at this stage

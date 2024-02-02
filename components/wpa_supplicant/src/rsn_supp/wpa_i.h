@@ -36,6 +36,11 @@ struct wpa_sm {
     u8 rx_replay_counter[WPA_REPLAY_COUNTER_LEN];
     int rx_replay_counter_set;
     u8 request_counter[WPA_REPLAY_COUNTER_LEN];
+    struct wpa_gtk gtk;
+#ifdef CONFIG_IEEE80211W
+    struct wpa_igtk igtk;
+#endif /* CONFIG_IEEE80211W */
+
     struct rsn_pmksa_cache *pmksa; /* PMKSA cache */
     struct rsn_pmksa_cache_entry *cur_pmksa; /* current PMKSA entry */
     u8 ssid[32];
@@ -75,7 +80,7 @@ struct wpa_sm {
     struct install_key install_ptk;
     struct install_key install_gtk;
     int mic_errors_seen; /* Michael MIC errors with the current PTK */
-
+    int use_ext_key_id; /* Enabled only for WPA PSK first key exchange */
     void (* sendto) (void *buffer, uint16_t len);
     void (*config_assoc_ie) (u8 proto, u8 *assoc_buf, u32 assoc_wpa_ie_len);
     void (*install_ppkey) (enum wpa_alg alg, u8 *addr, int key_idx, int set_tx,
@@ -117,6 +122,8 @@ struct wpa_sm {
     u16 owe_group;
     struct wpabuf *owe_ie;
 #endif /* CONFIG_OWE_STA */
+    int (*wpa_sm_wps_disable)(void);
+    esp_err_t (*wpa_sm_wpa2_ent_disable)(void);
 };
 
 /**
@@ -204,7 +211,7 @@ bool wpa_sm_init(char * payload, WPA_SEND_FUNC snd_func, \
 
 void wpa_sm_deinit(void);
 
-void eapol_txcb(void *eb);
+void eapol_txcb(uint8_t *eapol_payload, size_t len, bool tx_failure);
 
 void wpa_set_profile(u32 wpa_proto, u8 auth_mode);
 

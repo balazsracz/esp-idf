@@ -31,6 +31,7 @@
 #include "esp_wifi.h"
 #include "esp_private/wifi.h"
 #include "esp_wpas_glue.h"
+#include "esp_wps_i.h"
 
 #define STATE_MACHINE_DATA struct wpa_state_machine
 #define STATE_MACHINE_DEBUG_PREFIX "WPA"
@@ -1358,6 +1359,21 @@ SM_STATE(WPA_PTK, AUTHENTICATION2)
 }
 
 
+static int wpa_auth_sm_ptk_update(struct wpa_state_machine *sm)
+{
+   if (random_get_bytes(sm->ANonce, WPA_NONCE_LEN)) {
+       wpa_printf(MSG_ERROR,
+              "WPA: Failed to get random data for ANonce");
+       sm->Disconnect = TRUE;
+       return -1;
+   }
+   wpa_hexdump(MSG_DEBUG, "WPA: Assign new ANonce", sm->ANonce,
+           WPA_NONCE_LEN);
+   sm->TimeoutCtr = 0;
+   return 0;
+}
+
+
 SM_STATE(WPA_PTK, INITPMK)
 {
     u8 msk[2 * PMK_LEN];
@@ -1837,9 +1853,12 @@ SM_STEP(WPA_PTK)
         SM_ENTER(WPA_PTK, AUTHENTICATION);
     else if (sm->ReAuthenticationRequest)
         SM_ENTER(WPA_PTK, AUTHENTICATION2);
-    else if (sm->PTKRequest)
-        SM_ENTER(WPA_PTK, PTKSTART);
-    else switch (sm->wpa_ptk_state) {
+    else if (sm->PTKRequest) {
+        if (wpa_auth_sm_ptk_update(sm) < 0)
+            SM_ENTER(WPA_PTK, DISCONNECTED);
+        else
+            SM_ENTER(WPA_PTK, PTKSTART);
+    } else switch (sm->wpa_ptk_state) {
     case WPA_PTK_INITIALIZE:
         break;
     case WPA_PTK_DISCONNECT:
@@ -2375,13 +2394,42 @@ bool wpa_ap_join(struct sta_info *sta, uint8_t *bssid, uint8_t *wpa_ie, uint8_t 
     return true;
 }
 
+#ifdef CONFIG_WPS_REGISTRAR
+static void ap_free_sta_timeout(void *ctx, void *data)
+{
+    struct hostapd_data *hapd = (struct hostapd_data *) ctx;
+    u8 *addr = (u8 *) data;
+    struct sta_info *sta = ap_get_sta(hapd, addr);
+
+    if (sta) {
+        ap_free_sta(hapd, sta);
+    }
+
+    os_free(addr);
+}
+#endif
+
 bool wpa_ap_remove(void* sta_info)
 {
     struct hostapd_data *hapd = hostapd_get_hapd_data();
+
     if (!sta_info || !hapd) {
         return false;
     }
 
+#ifdef CONFIG_WPS_REGISTRAR
+    wpa_printf(MSG_DEBUG, "wps_status=%d", wps_get_status());
+    if (wps_get_status() == WPS_STATUS_PENDING) {
+        struct sta_info *sta = (struct sta_info *)sta_info;
+        u8 *addr = os_malloc(ETH_ALEN);
+
+	if (!addr) {
+            return false;
+	}
+	os_memcpy(addr, sta->addr, ETH_ALEN);
+        eloop_register_timeout(0, 10000, ap_free_sta_timeout, hapd, addr);
+    } else
+#endif
     ap_free_sta(hapd, sta_info);
 
     return true;

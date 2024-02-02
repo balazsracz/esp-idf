@@ -178,9 +178,9 @@ This example "myProject" contains the following elements:
 
 - "sdkconfig" project configuration file. This file is created/updated when ``idf.py menuconfig`` runs, and holds configuration for all of the components in the project (including ESP-IDF itself). The "sdkconfig" file may or may not be added to the source control system of the project.
 
-- Optional "components" directory contains components that are part of the project. A project does not have to contain custom components of this kind, but it can be useful for structuring reusable code or including third party components that aren't part of ESP-IDF. Alternatively, ``EXTRA_COMPONENT_DIRS`` can be set in the top-level CMakeLists.txt to look for components in other places. See the :ref:`renaming main <rename-main>` section for more info. If you have a lot of source files in your project, we recommend grouping most into components instead of putting them all in "main".
+- Optional "components" directory contains components that are part of the project. A project does not have to contain custom components of this kind, but it can be useful for structuring reusable code or including third party components that aren't part of ESP-IDF. Alternatively, ``EXTRA_COMPONENT_DIRS`` can be set in the top-level CMakeLists.txt to look for components in other places.
 
-- "main" directory is a special component that contains source code for the project itself. "main" is a default name, the CMake variable ``COMPONENT_DIRS`` includes this component but you can modify this variable.
+- "main" directory is a special component that contains source code for the project itself. "main" is a default name, the CMake variable ``COMPONENT_DIRS`` includes this component but you can modify this variable. See the :ref:`renaming main <rename-main>` section for more info. If you have a lot of source files in your project, we recommend grouping most into components instead of putting them all in "main".
 
 - "build" directory is where build output is created. This directory is created by ``idf.py`` if it doesn't already exist. CMake configures the project and generates interim build files in this directory. Then, after the main build process is run, this directory will also contain interim object files and libraries as well as final binary output files. This directory is usually not added to source control or distributed with the project source code.
 
@@ -343,13 +343,13 @@ from the component CMakeLists.txt:
 - ``IDF_VERSION_MAJOR``, ``IDF_VERSION_MINOR``, ``IDF_VERSION_PATCH``: Components of ESP-IDF version, to be used in conditional expressions. Note that this information is less precise than that provided by ``IDF_VER`` variable. ``v4.0-dev-*``, ``v4.0-beta1``, ``v4.0-rc1`` and ``v4.0`` will all have the same values of ``IDF_VERSION_*`` variables, but different ``IDF_VER`` values.
 - ``IDF_TARGET``: Name of the target for which the project is being built.
 - ``PROJECT_VER``: Project version.
-- ``EXTRA_PARTITION_SUBTYPES``: CMake list of extra partition subtypes. Each subtype description is a comma separated string with ``type_name, subtype_name, numeric_value`` format. Components may add new subtypes by appending them to this list.
 
   * If :ref:`CONFIG_APP_PROJECT_VER_FROM_CONFIG` option is set, the value of :ref:`CONFIG_APP_PROJECT_VER` will be used.
   * Else, if ``PROJECT_VER`` variable is set in project CMakeLists.txt file, its value will be used.
   * Else, if the ``PROJECT_DIR/version.txt`` exists, its contents will be used as ``PROJECT_VER``.
   * Else, if the project is located inside a Git repository, the output of git describe will be used.
   * Otherwise, ``PROJECT_VER`` will be "1".
+- ``EXTRA_PARTITION_SUBTYPES``: CMake list of extra partition subtypes. Each subtype description is a comma separated string with ``type_name, subtype_name, numeric_value`` format. Components may add new subtypes by appending them to this list.
 
 Other build properties are listed :ref:`here<cmake-build-properties>`.
 
@@ -624,6 +624,23 @@ The order of components in the ``BUILD_COMPONENTS`` variable determines other or
 - Order that :ref:`project_include.cmake` files are included into the project.
 - Order that the list of header paths is generated for compilation (via ``-I`` argument). (Note that for a given component's source files, only that component's dependency's header paths are passed to the compiler.)
 
+Adding Link-Time Dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. highlight:: cmake
+
+The ESP-IDF CMake helper function ``idf_component_add_link_dependency`` adds a link-only dependency between one component and another. In almost all cases, it is better to use the ``PRIV_REQUIRES`` feature in ``idf_component_register`` to create a dependency. However, in some cases, it's necessary to add the link-time dependency of another component to this component, i.e., the reverse order to ``PRIV_REQUIRES`` (for example: :doc:`/api-reference/storage/spi_flash_override_driver`).
+
+To make another component depend on this component at link time::
+
+  idf_component_add_link_dependency(FROM other_component)
+
+Place this line after the line with ``idf_component_register``.
+
+It's also possible to specify both components by name::
+
+  idf_component_add_link_dependency(FROM other_component TO that_component)
+
 .. _override_project_config:
 
 Overriding Parts of the Project
@@ -789,11 +806,11 @@ Some components will have a situation where a source file isn't supplied with th
     add_dependencies(${COMPONENT_LIB} logo)
 
     set_property(DIRECTORY "${COMPONENT_DIR}" APPEND PROPERTY
-         ADDITIONAL_MAKE_CLEAN_FILES logo.h)
+         ADDITIONAL_CLEAN_FILES logo.h)
 
 This answer is adapted from the `CMake FAQ entry <cmake faq generated files_>`_, which contains some other examples that will also work with ESP-IDF builds.
 
-In this example, logo.h will be generated in the current directory (the build directory) while logo.bmp comes with the component and resides under the component path. Because logo.h is a generated file, it should be cleaned when the project is cleaned. For this reason it is added to the `ADDITIONAL_MAKE_CLEAN_FILES`_ property.
+In this example, logo.h will be generated in the current directory (the build directory) while logo.bmp comes with the component and resides under the component path. Because logo.h is a generated file, it should be cleaned when the project is cleaned. For this reason it is added to the `ADDITIONAL_CLEAN_FILES`_ property.
 
 .. note::
 
@@ -888,7 +905,7 @@ Obviously, there are cases where all these recipes are insufficient for a certai
    set_target_properties(quirc PROPERTIES INTERFACE_INCLUDE_DIRECTORIES
         ${COMPONENT_DIR}/quirc/lib)
 
-   set_directory_properties( PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES
+   set_directory_properties( PROPERTIES ADDITIONAL_CLEAN_FILES
         "${COMPONENT_DIR}/quirc/libquirc.a")
 
 (The above CMakeLists.txt can be used to create a component named ``quirc`` that builds the quirc_ project using its own Makefile.)
@@ -900,20 +917,20 @@ Obviously, there are cases where all these recipes are insufficient for a certai
   - Consult the ExternalProject_ documentation for more details about ``externalproject_add()``
 
 - The second set of commands adds a library target, which points to the "imported" library file built by the external system. Some properties need to be set in order to add include directories and tell CMake where this file is.
-- Finally, the generated library is added to `ADDITIONAL_MAKE_CLEAN_FILES`_. This means ``make clean`` will delete this library. (Note that the other object files from the build won't be deleted.)
+- Finally, the generated library is added to `ADDITIONAL_CLEAN_FILES`_. This means ``make clean`` will delete this library. (Note that the other object files from the build won't be deleted.)
 
 .. only:: esp32
 
    .. note:: When using an external build process with PSRAM, remember to add ``-mfix-esp32-psram-cache-issue`` to the C compiler arguments. See :ref:`CONFIG_SPIRAM_CACHE_WORKAROUND` for details of this flag.
 
-.. _ADDITIONAL_MAKE_CLEAN_FILES_note:
+.. _ADDITIONAL_CLEAN_FILES_note:
 
 ExternalProject dependencies, clean builds
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 CMake has some unusual behaviour around external project builds:
 
-- `ADDITIONAL_MAKE_CLEAN_FILES`_ only works when "make" is used as the build system. If Ninja_ or an IDE build system is used, it won't delete these files when cleaning.
+- `ADDITIONAL_CLEAN_FILES`_ only works when "make" or "ninja" is used as the build system. If an IDE build system is used, it won't delete these files when cleaning.
 - However, the ExternalProject_ configure & build commands will *always* be re-run after a clean is run.
 - Therefore, there are two alternative recommended ways to configure the external build command:
 
@@ -1403,7 +1420,7 @@ This phase sets up necessary parameters for the build.
         - Add components in :idf:`components` to the build.
     - The initial part of the custom ``project()`` command performs the following steps:
         - Set ``IDF_TARGET`` from environment variable or CMake cache and the corresponding ``CMAKE_TOOLCHAIN_FILE`` to be used.
-        - Add components in ``EXTRA_COMPONENTS_DIRS`` to the build.
+        - Add components in ``EXTRA_COMPONENT_DIRS`` to the build.
         - Prepare arguments for calling command ``idf_build_process()`` from variables such as ``COMPONENTS``/``EXCLUDE_COMPONENTS``, ``SDKCONFIG``, ``SDKCONFIG_DEFAULTS``.
 
   The call to ``idf_build_process()`` command marks the end of this phase.
@@ -1461,7 +1478,7 @@ Some features are significantly different or removed in the CMake-based system. 
 - ``COMPONENT_EXTRA_INCLUDES``: Used to be an alternative to ``COMPONENT_PRIV_INCLUDEDIRS`` for absolute paths. Use ``PRIV_INCLUDE_DIRS`` argument to ``idf_component_register`` for all cases now (can be relative or absolute).
 - ``COMPONENT_OBJS``: Previously, component sources could be specified as a list of object files. Now they can be specified as a list of source files via ``SRCS`` argument to `idf_component_register`.
 - ``COMPONENT_OBJEXCLUDE``: Has been replaced with ``EXCLUDE_SRCS`` argument to ``idf_component_register``. Specify source files (as absolute paths or relative to component directory), instead.
-- ``COMPONENT_EXTRA_CLEAN``: Set property ``ADDITIONAL_MAKE_CLEAN_FILES`` instead but note :ref:`CMake has some restrictions around this functionality <ADDITIONAL_MAKE_CLEAN_FILES_note>`.
+- ``COMPONENT_EXTRA_CLEAN``: Set property ``ADDITIONAL_CLEAN_FILES`` instead but note :ref:`CMake has some restrictions around this functionality <ADDITIONAL_CLEAN_FILES_note>`.
 - ``COMPONENT_OWNBUILDTARGET`` & ``COMPONENT_OWNCLEANTARGET``: Use CMake `ExternalProject`_ instead. See :ref:`component-build-full-override` for full details.
 - ``COMPONENT_CONFIG_ONLY``: Call ``idf_component_register`` without any arguments instead. See `Configuration-Only Components`_.
 - ``CFLAGS``, ``CPPFLAGS``, ``CXXFLAGS``: Use equivalent CMake commands instead. See `Controlling Component Compilation`_.
@@ -1498,7 +1515,7 @@ Flashing from make
 .. _cmake set: https://cmake.org/cmake/help/v3.16/command/set.html
 .. _cmake string: https://cmake.org/cmake/help/v3.16/command/string.html
 .. _cmake faq generated files: https://gitlab.kitware.com/cmake/community/-/wikis/FAQ#how-can-i-generate-a-source-file-during-the-build
-.. _ADDITIONAL_MAKE_CLEAN_FILES: https://cmake.org/cmake/help/v3.16/prop_dir/ADDITIONAL_MAKE_CLEAN_FILES.html
+.. _ADDITIONAL_CLEAN_FILES: https://cmake.org/cmake/help/v3.16/prop_dir/ADDITIONAL_CLEAN_FILES.html
 .. _ExternalProject: https://cmake.org/cmake/help/v3.16/module/ExternalProject.html
 .. _cmake language variables: https://cmake.org/cmake/help/v3.16/manual/cmake-variables.7.html#variables-for-languages
 .. _set_source_files_properties: https://cmake.org/cmake/help/v3.16/command/set_source_files_properties.html

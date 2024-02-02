@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2019-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2019-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -512,9 +512,18 @@ esp_err_t set_server_config(esp_tls_cfg_server_t *cfg, esp_tls_t *tls)
         return ESP_ERR_MBEDTLS_SSL_CONFIG_DEFAULTS_FAILED;
     }
 
+    mbedtls_ssl_conf_set_user_data_p(&tls->conf, cfg->userdata);
+
 #ifdef CONFIG_MBEDTLS_SSL_ALPN
     if (cfg->alpn_protos) {
         mbedtls_ssl_conf_alpn_protocols(&tls->conf, cfg->alpn_protos);
+    }
+#endif
+
+#if defined(CONFIG_ESP_TLS_SERVER_CERT_SELECT_HOOK)
+    if (cfg->cert_select_cb != NULL) {
+        ESP_LOGI(TAG, "Initializing server side cert selection cb");
+        mbedtls_ssl_conf_cert_cb(&tls->conf, cfg->cert_select_cb);
     }
 #endif
 
@@ -569,7 +578,17 @@ esp_err_t set_server_config(esp_tls_cfg_server_t *cfg, esp_tls_t *tls)
             return esp_ret;
         }
     } else {
+#if defined(CONFIG_ESP_TLS_SERVER_CERT_SELECT_HOOK)
+        if (cfg->cert_select_cb == NULL) {
+            ESP_LOGE(TAG, "No cert select cb is defined");
+        } else {
+            /* At this point Callback MUST ALWAYS call mbedtls_ssl_set_hs_own_cert, or the handshake will abort! */
+            ESP_LOGD(TAG, "Missing server cert and/or key, but cert selection cb is defined.");
+            return ESP_OK;
+        }
+#else
         ESP_LOGE(TAG, "Missing server certificate and/or key");
+#endif
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -790,6 +809,7 @@ int esp_mbedtls_server_session_create(esp_tls_cfg_server_t *cfg, int sockfd, esp
         tls->conn_state = ESP_TLS_FAIL;
         return -1;
     }
+
     tls->read = esp_mbedtls_read;
     tls->write = esp_mbedtls_write;
     int ret;
@@ -927,8 +947,9 @@ static esp_err_t esp_set_atecc608a_pki_context(esp_tls_t *tls, const void *pki)
     }
     mbedtls_x509_crt_init(&tls->clientcert);
 
-    if(cfg->clientcert_buf != NULL) {
-        ret = mbedtls_x509_crt_parse(&tls->clientcert, (const unsigned char*)((esp_tls_pki_t *)pki->publiccert_pem_buf), (esp_tls_pki_t *)pki->publiccert_pem_bytes);
+    esp_tls_pki_t *pki_l = (esp_tls_pki_t *) pki;
+    if (pki_l->publiccert_pem_buf != NULL) {
+        ret = mbedtls_x509_crt_parse(&tls->clientcert, pki_l->publiccert_pem_buf, pki_l->publiccert_pem_bytes);
         if (ret < 0) {
             ESP_LOGE(TAG, "mbedtls_x509_crt_parse returned -0x%04X", -ret);
             mbedtls_print_error_msg(ret);

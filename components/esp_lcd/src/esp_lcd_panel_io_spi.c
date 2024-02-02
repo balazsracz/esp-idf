@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2021-2022 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2021-2023 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,8 +22,6 @@
 #include "esp_check.h"
 #include "esp_lcd_common.h"
 
-#define LCD_SPI_MAX_DATA_SIZE (SPI_LL_DATA_MAX_BIT_LEN / 8)
-
 static const char *TAG = "lcd_panel.io.spi";
 
 static esp_err_t panel_io_spi_rx_param(esp_lcd_panel_io_t *io, int lcd_cmd, void *param, size_t param_size);
@@ -32,6 +30,7 @@ static esp_err_t panel_io_spi_tx_color(esp_lcd_panel_io_t *io, int lcd_cmd, cons
 static esp_err_t panel_io_spi_del(esp_lcd_panel_io_t *io);
 static void lcd_spi_pre_trans_cb(spi_transaction_t *trans);
 static void lcd_spi_post_trans_color_cb(spi_transaction_t *trans);
+static esp_err_t panel_io_spi_register_event_callbacks(esp_lcd_panel_io_handle_t io, const esp_lcd_panel_io_callbacks_t *cbs, void *user_ctx);
 
 typedef struct {
     spi_transaction_t base;
@@ -44,6 +43,7 @@ typedef struct {
 typedef struct {
     esp_lcd_panel_io_t base;     // Base class of generic lcd panel io
     spi_device_handle_t spi_dev; // SPI device handle
+    size_t spi_trans_max_bytes;  // Maximum bytes that can be transmitted in one spi transaction
     int dc_gpio_num;             // D/C line GPIO number
     esp_lcd_panel_io_color_trans_done_cb_t on_color_trans_done; // User register's callback, invoked when color data trans done
     void *user_ctx;           // User's private data, passed directly to callback on_color_trans_done
@@ -79,7 +79,7 @@ esp_err_t esp_lcd_new_panel_io_spi(esp_lcd_spi_bus_handle_t bus, const esp_lcd_p
         .spics_io_num = io_config->cs_gpio_num,
         .queue_size = io_config->trans_queue_depth,
         .pre_cb = lcd_spi_pre_trans_cb, // pre-transaction callback, mainly control DC gpio level
-        .post_cb = io_config->on_color_trans_done ? lcd_spi_post_trans_color_cb : NULL, // post-transaction, where we invoke user registered "on_color_trans_done()"
+        .post_cb = lcd_spi_post_trans_color_cb, // post-transaction, where we invoke user registered "on_color_trans_done()"
     };
     ret = spi_bus_add_device((spi_host_device_t)bus, &devcfg, &spi_panel_io->spi_dev);
     ESP_GOTO_ON_ERROR(ret, err, TAG, "adding spi device to bus failed");
@@ -105,8 +105,14 @@ esp_err_t esp_lcd_new_panel_io_spi(esp_lcd_spi_bus_handle_t bus, const esp_lcd_p
     spi_panel_io->base.tx_param = panel_io_spi_tx_param;
     spi_panel_io->base.tx_color = panel_io_spi_tx_color;
     spi_panel_io->base.del = panel_io_spi_del;
+    spi_panel_io->base.register_event_callbacks = panel_io_spi_register_event_callbacks;
+
+    size_t max_trans_bytes = 0;
+    ESP_GOTO_ON_ERROR(spi_bus_get_max_transaction_len((spi_host_device_t)bus, &max_trans_bytes), err, TAG, "get spi max transaction len failed");
+    spi_panel_io->spi_trans_max_bytes = max_trans_bytes;
+
     *ret_io = &(spi_panel_io->base);
-    ESP_LOGD(TAG, "new spi lcd panel io @%p", spi_panel_io);
+    ESP_LOGD(TAG, "new spi lcd panel io @%p, max_trans_bytes: %d", spi_panel_io, (int)max_trans_bytes);
 
     return ESP_OK;
 
@@ -142,6 +148,20 @@ static esp_err_t panel_io_spi_del(esp_lcd_panel_io_t *io)
 
 err:
     return ret;
+}
+
+static esp_err_t panel_io_spi_register_event_callbacks(esp_lcd_panel_io_handle_t io, const esp_lcd_panel_io_callbacks_t *cbs, void *user_ctx)
+{
+    esp_lcd_panel_io_spi_t *spi_panel_io = __containerof(io, esp_lcd_panel_io_spi_t, base);
+
+    if (spi_panel_io->on_color_trans_done != NULL) {
+        ESP_LOGW(TAG, "Callback on_color_trans_done was already set and now it was overwritten!");
+    }
+
+    spi_panel_io->on_color_trans_done = cbs->on_color_trans_done;
+    spi_panel_io->user_ctx = user_ctx;
+
+    return ESP_OK;
 }
 
 static void spi_lcd_prepare_cmd_buffer(esp_lcd_panel_io_spi_t *panel_io, const void *cmd)
@@ -180,7 +200,7 @@ static esp_err_t panel_io_spi_tx_param(esp_lcd_panel_io_t *io, int lcd_cmd, cons
     esp_lcd_panel_io_spi_t *spi_panel_io = __containerof(io, esp_lcd_panel_io_spi_t, base);
     bool send_cmd = (lcd_cmd >= 0);
 
-    spi_device_acquire_bus(spi_panel_io->spi_dev, portMAX_DELAY);
+    ESP_RETURN_ON_ERROR(spi_device_acquire_bus(spi_panel_io->spi_dev, portMAX_DELAY), TAG, "acquire spi bus failed");
 
     // before issue a polling transaction, need to wait queued transactions finished
     size_t num_trans_inflight = spi_panel_io->num_trans_inflight;
@@ -236,7 +256,7 @@ static esp_err_t panel_io_spi_rx_param(esp_lcd_panel_io_t *io, int lcd_cmd, void
     esp_lcd_panel_io_spi_t *spi_panel_io = __containerof(io, esp_lcd_panel_io_spi_t, base);
     bool send_cmd = (lcd_cmd >= 0);
 
-    spi_device_acquire_bus(spi_panel_io->spi_dev, portMAX_DELAY);
+    ESP_RETURN_ON_ERROR(spi_device_acquire_bus(spi_panel_io->spi_dev, portMAX_DELAY), TAG, "acquire spi bus failed");
 
     // before issue a polling transaction, need to wait queued transactions finished
     size_t num_trans_inflight = spi_panel_io->num_trans_inflight;
@@ -289,19 +309,21 @@ static esp_err_t panel_io_spi_tx_color(esp_lcd_panel_io_t *io, int lcd_cmd, cons
     spi_transaction_t *spi_trans = NULL;
     lcd_spi_trans_descriptor_t *lcd_trans = NULL;
     esp_lcd_panel_io_spi_t *spi_panel_io = __containerof(io, esp_lcd_panel_io_spi_t, base);
+
+    ESP_RETURN_ON_ERROR(spi_device_acquire_bus(spi_panel_io->spi_dev, portMAX_DELAY), TAG, "acquire spi bus failed");
+
     bool send_cmd = (lcd_cmd >= 0);
-
-    // before issue a polling transaction, need to wait queued transactions finished
-    size_t num_trans_inflight = spi_panel_io->num_trans_inflight;
-    for (size_t i = 0; i < num_trans_inflight; i++) {
-        ret = spi_device_get_trans_result(spi_panel_io->spi_dev, &spi_trans, portMAX_DELAY);
-        ESP_GOTO_ON_ERROR(ret, err, TAG, "recycle spi transactions failed");
-        spi_panel_io->num_trans_inflight--;
-    }
-    lcd_trans = &spi_panel_io->trans_pool[0];
-    memset(lcd_trans, 0, sizeof(lcd_spi_trans_descriptor_t));
-
     if (send_cmd) {
+        // before issue a polling transaction, need to wait queued transactions finished
+        size_t num_trans_inflight = spi_panel_io->num_trans_inflight;
+        for (size_t i = 0; i < num_trans_inflight; i++) {
+            ret = spi_device_get_trans_result(spi_panel_io->spi_dev, &spi_trans, portMAX_DELAY);
+            ESP_GOTO_ON_ERROR(ret, err, TAG, "recycle spi transactions failed");
+            spi_panel_io->num_trans_inflight--;
+        }
+        lcd_trans = &spi_panel_io->trans_pool[0];
+        memset(lcd_trans, 0, sizeof(lcd_spi_trans_descriptor_t));
+
         spi_lcd_prepare_cmd_buffer(spi_panel_io, &lcd_cmd);
         lcd_trans->base.user = spi_panel_io;
         lcd_trans->flags.dc_gpio_level = !spi_panel_io->flags.dc_data_level; // set D/C line to command mode
@@ -316,8 +338,7 @@ static esp_err_t panel_io_spi_tx_color(esp_lcd_panel_io_t *io, int lcd_cmd, cons
         ESP_GOTO_ON_ERROR(ret, err, TAG, "spi transmit (polling) command failed");
     }
 
-    // split to chunks if required:
-    // the SPI bus has a maximum transaction size determined by SPI_LL_DATA_MAX_BIT_LEN
+    // if the color buffer is big, we want to split it into chunks, and queue the chunks one by one
     do {
         size_t chunk_size = color_size;
 
@@ -333,13 +354,15 @@ static esp_err_t panel_io_spi_tx_color(esp_lcd_panel_io_t *io, int lcd_cmd, cons
         }
         memset(lcd_trans, 0, sizeof(lcd_spi_trans_descriptor_t));
 
-        // SPI per-transfer size has its limitation, if the color buffer is too big, we need to split it into multiple trunks
-        if (chunk_size > LCD_SPI_MAX_DATA_SIZE) {
+        // SPI per-transfer size has its limitation, if the color buffer is too big, we need to split it into multiple chunks
+        if (chunk_size > spi_panel_io->spi_trans_max_bytes) {
             // cap the transfer size to the maximum supported by the bus
-            chunk_size = LCD_SPI_MAX_DATA_SIZE;
+            chunk_size = spi_panel_io->spi_trans_max_bytes;
+            lcd_trans->base.flags |= SPI_TRANS_CS_KEEP_ACTIVE;
         } else {
             // mark en_trans_done_cb only at the last round to avoid premature completion callback
             lcd_trans->flags.en_trans_done_cb = 1;
+            lcd_trans->base.flags &= ~SPI_TRANS_CS_KEEP_ACTIVE;
         }
 
         lcd_trans->base.user = spi_panel_io;
@@ -362,6 +385,7 @@ static esp_err_t panel_io_spi_tx_color(esp_lcd_panel_io_t *io, int lcd_cmd, cons
     } while (color_size > 0); // continue while we have remaining data to transmit
 
 err:
+    spi_device_release_bus(spi_panel_io->spi_dev);
     return ret;
 }
 

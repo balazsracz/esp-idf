@@ -17,6 +17,7 @@
 #include "hal/timer_hal.h"
 #include "hal/wdt_types.h"
 #include "hal/wdt_hal.h"
+#include "esp_private/esp_int_wdt.h"
 
 #include "esp_private/panic_internal.h"
 #include "port/panic_funcs.h"
@@ -54,7 +55,7 @@
 #include "esp_gdbstub.h"
 #endif
 
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
 #include "hal/usb_serial_jtag_ll.h"
 #endif
 
@@ -68,7 +69,7 @@ static wdt_hal_context_t rtc_wdt_ctx = {.inst = WDT_RWDT, .rwdt_dev = &RTCCNTL};
 #if CONFIG_ESP_CONSOLE_UART
 static uart_hal_context_t s_panic_uart = { .dev = CONFIG_ESP_CONSOLE_UART_NUM == 0 ? &UART0 :&UART1 };
 
-void panic_print_char(const char c)
+static void panic_print_char_uart(const char c)
 {
     uint32_t sz = 0;
     while (!uart_hal_get_txfifo_len(&s_panic_uart));
@@ -78,21 +79,21 @@ void panic_print_char(const char c)
 
 
 #if CONFIG_ESP_CONSOLE_USB_CDC
-void panic_print_char(const char c)
+static void panic_print_char_usb_cdc(const char c)
 {
     esp_usb_console_write_buf(&c, 1);
     /* result ignored */
 }
 #endif // CONFIG_ESP_CONSOLE_USB_CDC
 
-#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
 //Timeout; if there's no host listening, the txfifo won't ever
 //be writable after the first packet.
 
 #define USBSERIAL_TIMEOUT_MAX_US 50000
 static int s_usbserial_timeout = 0;
 
-void panic_print_char(const char c)
+static void panic_print_char_usb_serial_jtag(const char c)
 {
     while (!usb_serial_jtag_ll_txfifo_writable() && s_usbserial_timeout < (USBSERIAL_TIMEOUT_MAX_US / 100)) {
         esp_rom_delay_us(100);
@@ -103,15 +104,21 @@ void panic_print_char(const char c)
         s_usbserial_timeout = 0;
     }
 }
-#endif //CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#endif //CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
 
 
-#if CONFIG_ESP_CONSOLE_NONE
 void panic_print_char(const char c)
 {
-    /* no-op */
+#if CONFIG_ESP_CONSOLE_UART
+    panic_print_char_uart(c);
+#endif
+#if CONFIG_ESP_CONSOLE_USB_CDC
+    panic_print_char_usb_cdc(c);
+#endif
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG || CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG
+    panic_print_char_usb_serial_jtag(c);
+#endif
 }
-#endif // CONFIG_ESP_CONSOLE_NONE
 
 void panic_print_str(const char *str)
 {
@@ -246,8 +253,8 @@ void esp_panic_handler(panic_info_t *info)
       *
       * ----------------------------------------------------------------------------------------
       * core - core where exception was triggered
-      * exception - what kind of exception occured
-      * description - a short description regarding the exception that occured
+      * exception - what kind of exception occurred
+      * description - a short description regarding the exception that occurred
       * details - more details about the exception
       * state - processor state like register contents, and backtrace
       * elf_info - details about the image currently running
@@ -312,6 +319,14 @@ void esp_panic_handler(panic_info_t *info)
     PANIC_INFO_DUMP(info, state);
     panic_print_str("\r\n");
 
+    /* No matter if we come here from abort or an exception, this variable must be reset.
+     * Else, any exception/error occurring during the current panic handler would considered
+     * an abort. Do this after PANIC_INFO_DUMP(info, state) as it also checks this variable.
+     * For example, if coredump triggers a stack overflow and this variable is not reset,
+     * the second panic would be still be marked as the result of an abort, even the previous
+     * message reason would be kept. */
+    g_panic_abort = false;
+
 #ifdef WITH_ELF_SHA256
     panic_print_str("\r\nELF file SHA256: ");
     char sha256_buf[65];
@@ -348,10 +363,6 @@ void esp_panic_handler(panic_info_t *info)
     } else {
         disable_all_wdts();
         s_dumping_core = true;
-        /* No matter if we come here from abort or an exception, this variable must be reset.
-         * Else, any exception/error occuring during the current panic handler would considered
-         * an abort. */
-        g_panic_abort = false;
 #if CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH
         esp_core_dump_to_flash(info);
 #endif
@@ -389,6 +400,7 @@ void esp_panic_handler(panic_info_t *info)
 #else
     disable_all_wdts();
     panic_print_str("CPU halted.\r\n");
+    esp_system_reset_modules_on_exit();
     while (1);
 #endif /* CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT || CONFIG_ESP_SYSTEM_PANIC_SILENT_REBOOT */
 #endif /* CONFIG_ESP_SYSTEM_PANIC_GDBSTUB */

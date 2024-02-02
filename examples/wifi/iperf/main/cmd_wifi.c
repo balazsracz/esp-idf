@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 #include "esp_log.h"
 #include "esp_console.h"
 #include "argtable3/argtable3.h"
@@ -146,12 +147,18 @@ void initialise_wifi(void)
     ESP_ERROR_CHECK(esp_wifi_start() );
 
 #if CONFIG_EXTERNAL_COEX_ENABLE
+#if SOC_EXTERNAL_COEX_ADVANCE
+    uint32_t in_pin0  = 1;
+    uint32_t in_pin1  = 2;
+    uint32_t out_pin0 = 3;
+    ESP_ERROR_CHECK( esp_external_coex_leader_role_set_gpio_pin(EXTERN_COEX_WIRE_3, in_pin0, in_pin1, out_pin0) );
+#else
     esp_external_coex_gpio_set_t gpio_pin;
     gpio_pin.in_pin0  = 1;
     gpio_pin.in_pin1  = 2;
     gpio_pin.out_pin0 = 3;
-
     ESP_ERROR_CHECK( esp_enable_extern_coex_gpio_pin(EXTERN_COEX_WIRE_3, gpio_pin) );
+#endif
 #endif
 
     initialized = true;
@@ -414,7 +421,9 @@ static int wifi_cmd_iperf(int argc, char **argv)
     }
 
 
-    ESP_LOGI(TAG, "mode=%s-%s sip=%d.%d.%d.%d:%d, dip=%d.%d.%d.%d:%d, interval=%d, time=%d",
+    ESP_LOGI(TAG, "mode=%s-%s sip=%" PRId32 ".%" PRId32 ".%" PRId32 ".%" PRId32 ":%d,\
+             dip=%" PRId32 ".%" PRId32 ".%" PRId32 ".%" PRId32 ":%d,\
+             interval=%" PRId32 ", time=%" PRId32 "",
              cfg.flag & IPERF_FLAG_TCP ? "tcp" : "udp",
              cfg.flag & IPERF_FLAG_SERVER ? "server" : "client",
              cfg.source_ip4 & 0xFF, (cfg.source_ip4 >> 8) & 0xFF, (cfg.source_ip4 >> 16) & 0xFF,

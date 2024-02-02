@@ -106,6 +106,7 @@ typedef struct {
     bool                    fec_required;           /*!< FEC is required or not, true by default */
     bool                    include_txpower;        /*!< EIR data include TX power, false by default */
     bool                    include_uuid;           /*!< EIR data include UUID, false by default */
+    bool                    include_name;           /*!< EIR data include device name, true by default */
     uint8_t                 flag;                   /*!< EIR flags, see ESP_BT_EIR_FLAG for details, EIR will not include flag if it is 0, 0 by default */
     uint16_t                manufacturer_len;       /*!< Manufacturer data length, 0 by default */
     uint8_t                 *p_manufacturer_data;   /*!< Manufacturer data point */
@@ -215,6 +216,8 @@ typedef enum {
     ESP_BT_GAP_MODE_CHG_EVT,
     ESP_BT_GAP_REMOVE_BOND_DEV_COMPLETE_EVT,         /*!< remove bond device complete event */
     ESP_BT_GAP_QOS_CMPL_EVT,                        /*!< QOS complete event */
+    ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT,              /*!< ACL connection complete status event */
+    ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT,           /*!< ACL disconnection complete status event */
     ESP_BT_GAP_EVT_MAX,
 } esp_bt_gap_cb_event_t;
 
@@ -368,6 +371,24 @@ typedef union {
                                                     which from the master to a particular slave on the ACL
                                                     logical transport. unit is 0.625ms. */
     } qos_cmpl;                                /*!< QoS complete parameter struct */
+
+    /**
+     * @brief ESP_BT_GAP_ACL_CONN_CMPL_STAT_EVT
+     */
+    struct acl_conn_cmpl_stat_param {
+        esp_bt_status_t stat;                  /*!< ACL connection status */
+        uint16_t handle;                       /*!< ACL connection handle */
+        esp_bd_addr_t bda;                     /*!< remote bluetooth device address */
+    } acl_conn_cmpl_stat;                      /*!< ACL connection complete status parameter struct */
+
+    /**
+     * @brief ESP_BT_GAP_ACL_DISCONN_CMPL_STAT_EVT
+     */
+    struct acl_disconn_cmpl_stat_param {
+        esp_bt_status_t reason;                /*!< ACL disconnection reason */
+        uint16_t handle;                       /*!< ACL connection handle */
+        esp_bd_addr_t bda;                     /*!< remote bluetooth device address */
+    } acl_disconn_cmpl_stat;                   /*!< ACL disconnection complete status parameter struct */
 } esp_bt_gap_cb_param_t;
 
 /**
@@ -556,7 +577,9 @@ esp_err_t esp_bt_gap_config_eir_data(esp_bt_eir_data_t *eir_data);
 /**
  * @brief           This function is called to set class of device.
  *                  The structure esp_bt_gap_cb_t will be called with ESP_BT_GAP_SET_COD_EVT after set COD ends.
- *                  Some profile have special restrictions on class of device, changes may cause these profile do not work.
+ *                  This function should be called after Bluetooth profiles are initialized, otherwise the user configured
+ *                  class of device can be overwritten.
+ *                  Some profiles have special restrictions on class of device, and changes may make these profiles unable to work.
  *
  * @param[in]       cod - class of device
  * @param[in]       mode - setting mode

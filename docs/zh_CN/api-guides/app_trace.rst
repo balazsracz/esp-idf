@@ -427,7 +427,7 @@ Start 子命令语法：
 
 .. note::
 
-    ESP-IDF 使用自己的 SystemView FreeRTOS 事件 ID 映射，因此用户需要将 ``$SYSVIEW_INSTALL_DIR/Description/SYSVIEW_FreeRTOS.txt`` 替换成 ``$IDF_PATH/docs/api-guides/SYSVIEW_FreeRTOS.txt``。在使用上述链接配置 SystemView 序列化程序时，也应该使用该特定文件的内容。
+    ESP-IDF 使用自己的 SystemView FreeRTOS 事件 ID 映射，因此用户需要将 ``$SYSVIEW_INSTALL_DIR/Description/SYSVIEW_FreeRTOS.txt`` 替换成 ``$IDF_PATH/tools/esp_app_trace/SYSVIEW_FreeRTOS.txt``。在使用上述链接配置 SystemView 序列化程序时，也应该使用该特定文件的内容。
 
 .. only:: not CONFIG_FREERTOS_UNICORE
 
@@ -444,7 +444,7 @@ Start 子命令语法：
     6. 双击创建的端口，会打开此端口的视图。
     7. 单击 ``Start/Stop Streaming`` 按钮，数据将会被加载。
     8. 使用 ``Zoom Out``，``Zoom In`` 和 ``Zoom Fit`` 按钮来查看数据。
-    9. 有关设置测量光标和其他的功能，请参阅 `Impulse 官方文档 <https://toem.de/index.php/projects/impulse>`_ 。
+    9. 有关设置测量光标和其他的功能，请参阅 `Impulse 官方文档 <https://toem.de/index.php/products/impulse>`_ 。
 
     .. note::
 

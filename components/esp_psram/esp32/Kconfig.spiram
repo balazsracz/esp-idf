@@ -63,7 +63,7 @@ menu "SPI RAM config"
 
     config SPIRAM_CACHE_WORKAROUND
         bool "Enable workaround for bug in SPI RAM cache for Rev1 ESP32s"
-        depends on (SPIRAM_USE_MEMMAP || SPIRAM_USE_CAPS_ALLOC || SPIRAM_USE_MALLOC) && (ESP32_REV_MIN < 3)
+        depends on (SPIRAM_USE_MEMMAP || SPIRAM_USE_CAPS_ALLOC || SPIRAM_USE_MALLOC) && (ESP32_REV_MIN_FULL < 300)
         default "y"
         help
             Revision 1 of the ESP32 has a bug that can cause a write to PSRAM not to take place in some situations
@@ -300,6 +300,9 @@ menu "SPI RAM config"
                 The PSRAM CLOCK IO can be any unused GPIO, user can config it based on hardware design. If user use
                 1.8V flash and 1.8V psram, this value can only be one of 6, 7, 8, 9, 10, 11, 16, 17.
 
+                If configured to the same pin as Flash, PSRAM shouldn't be rev0. Contact Espressif for more
+                information.
+
         config D0WD_PSRAM_CS_IO
             int "PSRAM CS IO number"
             depends on SPIRAM
@@ -321,6 +324,9 @@ menu "SPI RAM config"
                 User can config it based on hardware design. For ESP32-D2WD chip, the psram can only be 1.8V psram,
                 so this value can only be one of 6, 7, 8, 9, 10, 11, 16, 17.
 
+                If configured to the same pin (GPIO6) as Flash, PSRAM shouldn't be rev0. Contact Espressif for more
+                information.
+
         config D2WD_PSRAM_CS_IO
             int "PSRAM CS IO number"
             depends on SPIRAM
@@ -331,7 +337,7 @@ menu "SPI RAM config"
                 so this value can only be one of 6, 7, 8, 9, 10, 11, 16, 17.
     endmenu
 
-    menu "PSRAM clock and cs IO for ESP32-PICO"
+    menu "PSRAM clock and cs IO for ESP32-PICO-D4"
 
         config PICO_PSRAM_CS_IO
             int "PSRAM CS IO number"

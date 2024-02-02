@@ -11,11 +11,11 @@ config ESP_ROM_HAS_CRC_BE
     bool
     default y
 
-config ESP_ROM_HAS_JPEG_DECODE
+config ESP_ROM_HAS_MZ_CRC32
     bool
     default y
 
-config ESP_ROM_SUPPORT_MULTIPLE_UART
+config ESP_ROM_HAS_JPEG_DECODE
     bool
     default y
 
@@ -26,6 +26,10 @@ config ESP_ROM_UART_CLK_IS_XTAL
 config ESP_ROM_HAS_RETARGETABLE_LOCKING
     bool
     default y
+
+config ESP_ROM_USB_OTG_NUM
+    int
+    default 3
 
 config ESP_ROM_USB_SERIAL_DEVICE_NUM
     int
@@ -44,5 +48,25 @@ config ESP_ROM_HAS_HAL_WDT
     default y
 
 config ESP_ROM_NEEDS_SWSETUP_WORKAROUND
+    bool
+    default y
+
+config ESP_ROM_HAS_ETS_PRINTF_BUG
+    bool
+    default y
+
+config ESP_ROM_HAS_FLASH_COUNT_PAGES_BUG
+    bool
+    default y
+
+config ESP_ROM_HAS_CACHE_SUSPEND_WAITI_BUG
+    bool
+    default y
+
+config ESP_ROM_HAS_CACHE_WRITEBACK_BUG
+    bool
+    default y
+
+config ESP_ROM_NEEDS_SET_CACHE_MMU_SIZE
     bool
     default y

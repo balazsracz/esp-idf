@@ -17,7 +17,7 @@ config SOC_DPORT_WORKAROUND
 
 config SOC_CAPS_ECO_VER_MAX
     int
-    default 3
+    default 301
 
 config SOC_ADC_SUPPORTED
     bool
@@ -207,6 +207,10 @@ config SOC_SHARED_IDCACHE_SUPPORTED
     bool
     default y
 
+config SOC_IDCACHE_PER_CORE
+    bool
+    default y
+
 config SOC_MMU_LINEAR_ADDRESS_REGION_NUM
     int
     default 5
@@ -255,9 +259,9 @@ config SOC_GPIO_VALID_GPIO_MASK
     hex
     default 0xFFFFFFFFFF
 
-config SOC_GPIO_SUPPORT_SLP_SWITCH
-    bool
-    default y
+config SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK
+    hex
+    default 0xEF0FEA
 
 config SOC_I2C_NUM
     int
@@ -699,6 +703,10 @@ config SOC_PM_SUPPORT_RTC_SLOW_MEM_PD
     bool
     default y
 
+config SOC_PM_SUPPORT_MODEM_PD
+    bool
+    default y
+
 config SOC_SDMMC_USE_IOMUX
     bool
     default y
@@ -742,3 +750,7 @@ config SOC_BLE_MESH_SUPPORTED
 config SOC_BT_CLASSIC_SUPPORTED
     bool
     default y
+
+config SOC_BLE_DEVICE_PRIVACY_SUPPORTED
+    bool
+    default n

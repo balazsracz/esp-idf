@@ -25,7 +25,6 @@
 #define DR_REG_ITAG_TABLE                       0x600C6000
 #define DR_REG_DTAG_TABLE                       0x600C8000
 #define DR_REG_EXT_MEM_ENC                      0x600CC000
-#define DR_REG_DPORT_END                        0x600D3FFC
 
 
 #define REG_UHCI_BASE(i)         (DR_REG_UHCI0_BASE - (i) * 0x8000)
@@ -219,7 +218,7 @@
 //Region of memory that is internal, as in on the same silicon die as the ESP32 CPUs
 //(excluding RTC data region, that's checked separately.) See esp_ptr_internal().
 #define SOC_MEM_INTERNAL_LOW        0x3FC88000
-#define SOC_MEM_INTERNAL_HIGH       0x403E2000
+#define SOC_MEM_INTERNAL_HIGH       0x403E0000
 
 // Start (highest address) of ROM boot stack, only relevant during early boot
 #define SOC_ROM_STACK_START         0x3fceb710
@@ -287,3 +286,6 @@
 
 //Invalid interrupt for number interrupt matrix
 #define ETS_INVALID_INUM                        6
+
+// Interrupt number for the Interrupt watchdog
+#define ETS_INT_WDT_INUM                         (ETS_T1_WDT_INUM)

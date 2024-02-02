@@ -47,6 +47,13 @@ config BT_CLASSIC_ENABLED
     help
         For now this option needs "SMP_ENABLE" to be set to yes
 
+config BT_CLASSIC_BQB_ENABLED
+    bool "Host Qualitifcation support for Classic Bluetooth"
+    depends on BT_CLASSIC_ENABLED
+    default n
+    help
+        This enables functionalities of Host qualification for Classic Bluetooth.
+
 config BT_A2DP_ENABLE
     bool "A2DP"
     depends on BT_CLASSIC_ENABLED
@@ -1001,12 +1008,16 @@ menu "BT DEBUG LOG LEVEL"
 endmenu #BT DEBUG LOG LEVEL
 
 config BT_ACL_CONNECTIONS
-    int "BT/BLE MAX ACL CONNECTIONS(1~7)"
+    int "BT/BLE MAX ACL CONNECTIONS(1~9)"
     depends on BT_BLUEDROID_ENABLED
-    range 1 7
+    range 1 9
     default 4
     help
-        Maximum BT/BLE connection count
+        Maximum BT/BLE connection count. The ESP32-C3/S3 chip supports a maximum of 10 instances,
+        including ADV, SCAN and connections. The ESP32-C3/S3 chip can connect up to 9 devices if
+        ADV or SCAN uses only one. If ADV and SCAN are both used, The ESP32-C3/S3 chip is connected
+        to a maximum of 8 devices. Because Bluetooth cannot reclaim used instances once ADV or SCAN
+        is used.
 
 config BT_MULTI_CONNECTION_ENBALE
     bool "Enable BLE multi-conections"
@@ -1075,9 +1086,8 @@ config BT_MAX_DEVICE_NAME_LEN
 
 config BT_BLE_RPA_SUPPORTED
     bool "Update RPA to Controller"
-    depends on BT_BLUEDROID_ENABLED
-    default n if IDF_TARGET_ESP32
-    default y
+    depends on BT_BLUEDROID_ENABLED && !SOC_BLE_DEVICE_PRIVACY_SUPPORTED
+    default n
     help
         This enables controller RPA list function.
         For ESP32, ESP32 only support network privacy mode. If this option is enabled, ESP32 will only accept
@@ -1087,7 +1097,7 @@ config BT_BLE_RPA_SUPPORTED
         cannot be used. This option is disabled by default on ESP32, please enable or disable this option according
         to your own needs.
 
-        For ESP32C3, ESP32S3, ESP32H2 and ESP32C2, devices support network privacy mode and device privacy mode,
+        For other BLE chips, devices support network privacy mode and device privacy mode,
         users can switch the two modes according to their own needs. So this option is enabled by default.
 
 config BT_BLE_50_FEATURES_SUPPORTED

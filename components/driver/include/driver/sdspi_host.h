@@ -45,6 +45,7 @@ typedef int sdspi_dev_handle_t;
     .get_bus_width = NULL, \
     .set_bus_ddr_mode = NULL, \
     .set_card_clk = &sdspi_host_set_card_clk, \
+    .set_cclk_always_on = NULL, \
     .do_transaction = &sdspi_host_do_transaction, \
     .deinit_p = &sdspi_host_remove_device, \
     .io_int_enable = &sdspi_host_io_int_enable, \
@@ -63,6 +64,7 @@ typedef struct {
     gpio_num_t gpio_int;    ///< GPIO number of interrupt line (input) for SDIO card.
 } sdspi_device_config_t;
 
+#define SDSPI_SLOT_NO_CS    GPIO_NUM_NC ///< indicates that card select line is not used
 #define SDSPI_SLOT_NO_CD    GPIO_NUM_NC ///< indicates that card detect line is not used
 #define SDSPI_SLOT_NO_WP    GPIO_NUM_NC ///< indicates that write protect line is not used
 #define SDSPI_SLOT_NO_INT   GPIO_NUM_NC ///< indicates that interrupt line is not used

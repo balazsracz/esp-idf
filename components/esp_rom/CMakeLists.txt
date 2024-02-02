@@ -37,6 +37,18 @@ if(CONFIG_SOC_SYSTIMER_SUPPORTED)
     list(APPEND sources "patches/esp_rom_systimer.c")
 endif()
 
+if(CONFIG_ESP_ROM_HAS_FLASH_COUNT_PAGES_BUG OR CONFIG_ESP_ROM_HAS_CACHE_WRITEBACK_BUG)
+    list(APPEND sources "patches/esp_rom_cache_esp32s2_esp32s3.c")
+endif()
+
+if(CONFIG_ESP_ROM_HAS_CACHE_WRITEBACK_BUG)
+    list(APPEND sources "patches/esp_rom_cache_writeback_esp32s3.S")
+endif()
+
+if(CONFIG_ESP_ROM_NEEDS_SET_CACHE_MMU_SIZE)
+    list(APPEND sources "patches/esp_rom_mmap.c")
+endif()
+
 idf_component_register(SRCS ${sources}
                        INCLUDE_DIRS ${include_dirs}
                        PRIV_REQUIRES ${private_required_comp}
@@ -84,7 +96,7 @@ if(BOOTLOADER_BUILD)
         if(NOT CONFIG_SPI_FLASH_ROM_DRIVER_PATCH)
             rom_linker_script("spiflash")
         endif()
-        if(CONFIG_ESP32_REV_MIN_3)
+        if(CONFIG_ESP32_REV_MIN_FULL GREATER_EQUAL 300)
             rom_linker_script("eco3")
         endif()
 
@@ -133,7 +145,7 @@ else() # Regular app build
             rom_linker_script("spiflash")
         endif()
 
-        if(CONFIG_ESP32_REV_MIN_3)
+        if(CONFIG_ESP32_REV_MIN_FULL GREATER_EQUAL 300)
             rom_linker_script("eco3")
         endif()
 
@@ -186,7 +198,7 @@ else() # Regular app build
             endif()
         endif()
 
-        if(CONFIG_ESP32C3_REV_MIN_3 OR CONFIG_ESP32C3_REV_MIN_4)
+        if(CONFIG_ESP32C3_REV_MIN_FULL GREATER_EQUAL 3)
             rom_linker_script("eco3")
         endif()
 
@@ -236,5 +248,5 @@ else() # Regular app build
 endif()
 
 if(target STREQUAL "esp32s2")
-    target_sources(${COMPONENT_LIB} PRIVATE "esp32s2/usb_descriptors.c")
+    target_sources(${COMPONENT_LIB} PRIVATE "esp32s2/usb_patches.c")
 endif()

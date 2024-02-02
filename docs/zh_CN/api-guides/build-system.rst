@@ -178,9 +178,9 @@ ESP-IDF 适用于 Python 3.7 以上版本。
 
 - "sdkconfig" 项目配置文件，执行 ``idf.py menuconfig`` 时会创建或更新此文件，文件中保存了项目中所有组件（包括 ESP-IDF 本身）的配置信息。 ``sdkconfig`` 文件可能会也可能不会被添加到项目的源码管理系统中。
 
-- 可选的 "components" 目录中包含了项目的部分自定义组件，并不是每个项目都需要这种自定义组件，但它有助于构建可复用的代码或者导入第三方（不属于 ESP-IDF）的组件。或者，您也可以在顶层 CMakeLists.txt 中设置 ``EXTRA_COMPONENT_DIRS`` 变量以查找其他指定位置处的组件。有关详细信息，请参阅 :ref:`重命名 main 组件 <rename-main>`。如果项目中源文件较多，建议将其归于组件中，而不是全部放在 "main" 中。
+- 可选的 "components" 目录中包含了项目的部分自定义组件，并不是每个项目都需要这种自定义组件，但它有助于构建可复用的代码或者导入第三方（不属于 ESP-IDF）的组件。或者，您也可以在顶层 CMakeLists.txt 中设置 ``EXTRA_COMPONENT_DIRS`` 变量以查找其他指定位置处的组件。
 
-- "main" 目录是一个特殊的组件，它包含项目本身的源代码。"main" 是默认名称，CMake 变量 ``COMPONENT_DIRS`` 默认包含此组件，但您可以修改此变量。
+- "main" 目录是一个特殊的组件，它包含项目本身的源代码。"main" 是默认名称，CMake 变量 ``COMPONENT_DIRS`` 默认包含此组件，但您可以修改此变量。有关详细信息，请参阅 :ref:`重命名 main 组件 <rename-main>`。如果项目中源文件较多，建议将其归于组件中，而不是全部放在 "main" 中。
 
 - "build" 目录是存放构建输出的地方，如果没有此目录，``idf.py`` 会自动创建。CMake 会配置项目，并在此目录下生成临时的构建文件。随后，在主构建进程的运行期间，该目录还会保存临时目标文件、库文件以及最终输出的二进制文件。此目录通常不会添加到项目的源码管理系统中，也不会随项目源码一同发布。
 
@@ -349,6 +349,7 @@ ESP-IDF 在搜索所有待构建的组件时，会按照 ``COMPONENT_DIRS`` 指�
   * 或者，如果 ``PROJECT_DIR/version.txt`` 文件存在，其内容会用作 ``PROJECT_VER`` 的值。
   * 或者，如果项目位于某个 Git 仓库中，则使用 ``git describe`` 命令的输出作为 ``PROJECT_VER`` 的值。
   * 否则，``PROJECT_VER`` 的值为 1。
+- ``EXTRA_PARTITION_SUBTYPES``：CMake 列表，用于创建额外的分区子类型。子类型的描述由字符串组成，以逗号为分隔，格式为 ``type_name, subtype_name, numeric_value``。组件可通过此列表，添加新的子类型。
 
 其它与构建属性有关的信息请参考 :ref:`这里<cmake-build-properties>`。
 
@@ -622,6 +623,23 @@ CMake 通常会在链接器命令行上重复两次组件库名称来自动处�
 
 - 项目导入 :ref:`project_include.cmake` 文件的顺序。
 - 生成用于编译（通过 ``-I`` 参数）的头文件路径列表的顺序。请注意，对于给定组件的源文件，仅需将该组件的依赖组件的头文件路径告知编译器。
+
+添加链接时依赖项
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. highlight:: cmake
+
+ESP-IDF 的 CMake 辅助函数 ``idf_component_add_link_dependency`` 可以在组件之间添加仅作用于链接时的依赖关系。绝大多数情况下，我们都建议您使用 ``idf_component_register`` 中的 ``PRIV_REQUIRES`` 功能来构建依赖关系。然而在某些情况下，还是有必要添加另一个组件对当前组件的链接时依赖，即反转 ``PRIV_REQUIRES`` 中的依赖关系（参考示例：:doc:`/api-reference/storage/spi_flash_override_driver`）。
+
+要使另一个组件在链接时依赖于这个组件::
+
+  idf_component_add_link_dependency(FROM other_component)
+
+请将上述行置于 ``idf_component_register`` 行之后。
+
+也可以通过名称指定两个组件::
+
+  idf_component_add_link_dependency(FROM other_component TO that_component)
 
 .. _override_project_config:
 
@@ -912,7 +930,7 @@ ExternalProject 的依赖与构建清理
 
 对于外部项目的构建，CMake 会有一些不同寻常的行为：
 
-- `ADDITIONAL_MAKE_CLEAN_FILES`_ 仅在使用 Make 构建系统时有效。如果使用 Ninja_ 或 IDE 自带的构建系统，执行项目清理时，这些文件不会被删除。
+- `ADDITIONAL_MAKE_CLEAN_FILES`_ 仅在使用 Make 或 Ninja_ 构建系统时有效。如果使用 IDE 自带的构建系统，执行项目清理时，这些文件不会被删除。
 - ExternalProject_ 会在 clean 运行后自动重新运行配置和构建命令。
 - 可以采用以下两种方法来配置外部构建命令：
 
@@ -1402,7 +1420,7 @@ ESP-IDF 构建系统的列表文件位于 :idf:`/tools/cmake` 中。实现构建
         - 将 :idf:`components` 中的组件添加到构建中。
     - 自定义 ``project()`` 命令的初始部分执行以下步骤：
         - 在环境变量或 CMake 缓存中设置 ``IDF_TARGET`` 以及设置相应要使用的``CMAKE_TOOLCHAIN_FILE``。
-        - 添加 ``EXTRA_COMPONENTS_DIRS`` 中的组件至构建中
+        - 添加 ``EXTRA_COMPONENT_DIRS`` 中的组件至构建中
         - 从 ``COMPONENTS``/``EXCLUDE_COMPONENTS``、``SDKCONFIG``、``SDKCONFIG_DEFAULTS`` 等变量中为调用命令 ``idf_build_process()`` 准备参数。
 
 调用 ``idf_build_process()`` 命令标志着这个阶段的结束。

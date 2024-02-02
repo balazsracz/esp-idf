@@ -24,6 +24,7 @@ which are undefined if the following flag is not defined */
 #include "mbedtls/ctr_drbg.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/debug.h"
+#include "mbedtls/oid.h"
 #ifdef ESPRESSIF_USE
 #include "mbedtls/esp_debug.h"
 #include "mbedtls/esp_config.h"
@@ -191,7 +192,6 @@ static int set_ca_cert(tls_context_t *tls, const unsigned char *cacert, size_t c
 	}
 	mbedtls_ssl_conf_authmode(&tls->conf, MBEDTLS_SSL_VERIFY_REQUIRED);
 	mbedtls_ssl_conf_ca_chain(&tls->conf, tls->cacert_ptr, NULL);
-
 	return 0;
 }
 
@@ -287,22 +287,24 @@ static void tls_enable_sha1_config(tls_context_t *tls)
 	mbedtls_ssl_conf_cert_profile(&tls->conf, crt_profile);
 	mbedtls_ssl_conf_sig_algs(&tls->conf, tls_sig_algs_for_eap);
 }
+#ifdef CONFIG_ESP_WIFI_DISABLE_KEY_USAGE_CHECK
+static int tls_disable_key_usages(void *data, mbedtls_x509_crt *cert, int depth, uint32_t *flags)
+{
+	cert->MBEDTLS_PRIVATE(ext_types) &= ~MBEDTLS_X509_EXT_KEY_USAGE;
+	cert->MBEDTLS_PRIVATE(ext_types) &= ~MBEDTLS_X509_EXT_EXTENDED_KEY_USAGE;
+	return 0;
+}
+#endif /*CONFIG_ESP_WIFI_DISABLE_KEY_USAGE_CHECK*/
 
 static const int eap_ciphersuite_preference[] =
 {
 #if defined(MBEDTLS_KEY_EXCHANGE_DHE_RSA_ENABLED)
-#if defined(MBEDTLS_SHA512_C) && defined(MBEDTLS_GCM_C)
-	MBEDTLS_TLS_DHE_RSA_WITH_AES_256_GCM_SHA384,
-#endif
 #if defined(MBEDTLS_CCM_C)
 	MBEDTLS_TLS_DHE_RSA_WITH_AES_256_CCM,
 #endif
 #if defined(MBEDTLS_CIPHER_MODE_CBC)
 	MBEDTLS_TLS_DHE_RSA_WITH_AES_256_CBC_SHA256,
 	MBEDTLS_TLS_DHE_RSA_WITH_AES_256_CBC_SHA,
-#endif
-#if defined(MBEDTLS_GCM_C)
-	MBEDTLS_TLS_DHE_RSA_WITH_CAMELLIA_256_GCM_SHA384,
 #endif
 #if defined(MBEDTLS_CIPHER_MODE_CBC)
 	MBEDTLS_TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA256,
@@ -324,9 +326,7 @@ static const int eap_ciphersuite_preference[] =
 #endif
 #endif
 #if defined(MBEDTLS_KEY_EXCHANGE_DHE_PSK_ENABLED)
-	MBEDTLS_TLS_DHE_PSK_WITH_AES_256_GCM_SHA384,
 	MBEDTLS_TLS_DHE_PSK_WITH_AES_256_CCM,
-	MBEDTLS_TLS_DHE_PSK_WITH_AES_256_CBC_SHA384,
 	MBEDTLS_TLS_DHE_PSK_WITH_AES_256_CBC_SHA,
 	MBEDTLS_TLS_DHE_PSK_WITH_AES_256_CCM_8,
 
@@ -334,9 +334,6 @@ static const int eap_ciphersuite_preference[] =
 	MBEDTLS_TLS_DHE_PSK_WITH_AES_128_CCM,
 	MBEDTLS_TLS_DHE_PSK_WITH_AES_128_CBC_SHA256,
 	MBEDTLS_TLS_DHE_PSK_WITH_AES_128_CCM_8,
-#endif
-#if defined(MBEDTLS_SHA512_C) && defined(MBEDTLS_GCM_C)
-	MBEDTLS_TLS_RSA_WITH_AES_256_GCM_SHA384,
 #endif
 #if defined(MBEDTLS_CCM_C)
 	MBEDTLS_TLS_RSA_WITH_AES_256_CCM,
@@ -386,14 +383,10 @@ static const int eap_ciphersuite_preference[] =
 	MBEDTLS_TLS_RSA_PSK_WITH_AES_128_CBC_SHA,
 #endif
 	/* The PSK suites */
-#if defined(MBEDTLS_GCM_C)
-	MBEDTLS_TLS_PSK_WITH_AES_256_GCM_SHA384,
-#endif
 #if defined(MBEDTLS_CCM_C)
 	MBEDTLS_TLS_PSK_WITH_AES_256_CCM,
 #endif
 #if defined(MBEDTLS_CIPHER_MODE_CBC)
-	MBEDTLS_TLS_PSK_WITH_AES_256_CBC_SHA384,
 	MBEDTLS_TLS_PSK_WITH_AES_256_CBC_SHA,
 #endif
 #if defined(MBEDTLS_CCM_C)
@@ -530,6 +523,10 @@ static int set_client_config(const struct tls_connection_params *cfg, tls_contex
 	 * and can cause watchdog. Enabling the ciphers which are secured enough
 	 * but doesn't take that much processing power */
 	tls_set_ciphersuite(cfg, tls);
+
+#ifdef CONFIG_ESP_WIFI_DISABLE_KEY_USAGE_CHECK
+	mbedtls_ssl_set_verify( &tls->ssl, tls_disable_key_usages, NULL );
+#endif /*CONFIG_ESP_WIFI_DISABLE_KEY_USAGE_CHECK*/
 
 #ifdef CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 	if (cfg->flags & TLS_CONN_USE_DEFAULT_CERT_BUNDLE) {

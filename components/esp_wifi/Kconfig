@@ -10,6 +10,7 @@ menu "Wi-Fi"
         bool "Software controls WiFi/Bluetooth coexistence"
         depends on ESP32_WIFI_ENABLED && BT_ENABLED
         default y
+        select ESP_WIFI_STA_DISCONNECTED_PM_ENABLE
         help
             If enabled, WiFi & Bluetooth coexistence is controlled by software rather than hardware.
             Recommended for heavy traffic scenarios. Both coexistence configuration options are
@@ -307,6 +308,7 @@ menu "Wi-Fi"
 
     config ESP_WIFI_STA_DISCONNECTED_PM_ENABLE
         bool "Power Management for station at disconnected"
+        default y
         help
             Select this option to enable power_management for station when disconnected.
             Chip will do modem-sleep when rf module is not in use any more.
@@ -314,14 +316,14 @@ menu "Wi-Fi"
     config ESP_WIFI_EXTERNAL_COEXIST_ENABLE
         bool "WiFi External Coexistence"
         default n
-        depends on (!BT_ENABLED && (IDF_TARGET_ESP32S2 || IDF_TARGET_ESP32C3))
+        depends on (!(BT_ENABLED||NIMBLE_ENABLED)&&(!IDF_TARGET_ESP32))
         help
             If enabled, HW External coexistence arbitration is managed by GPIO pins.
             It can support three types of wired combinations so far which are 1-wired/2-wired/3-wired.
             User can select GPIO pins in application code with configure interfaces.
 
             This function depends on BT-off
-            because currently we don't support external coex and internal coex simultaneously.
+            because currently we do not support external coex and internal coex simultaneously.
 
     config ESP_WIFI_GCMP_SUPPORT
         bool "WiFi GCMP Support(GCMP128 and GCMP256)"
@@ -383,4 +385,30 @@ menu "Wi-Fi"
             Delta timeout time for rf phy off, When the beacon is lost, the next rf phy off will
             be delayed for the time specified by the configuration item. Unit: 1024 microsecond.
 
-endmenu  # Wi-Fi
+    config ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM
+        int "Maximum espnow encrypt peers number"
+        range 0 4 if IDF_TARGET_ESP32C2
+        range 0 17 if (!IDF_TARGET_ESP32C2)
+        default 2 if IDF_TARGET_ESP32C2
+        default 7 if (!IDF_TARGET_ESP32C2)
+        help
+            Maximum number of encrypted peers supported by espnow.
+            The number of hardware keys for encryption is fixed. And the espnow and SoftAP share the same
+            hardware keys. So this configuration will affect the maximum connection number of SoftAP.
+            Maximum espnow encrypted peers number + maximum number of connections of SoftAP = Max hardware keys number.
+
+            When using ESP mesh, this value should be set to a maximum of 6.
+
+
+    config ESP_WIFI_WPS_PASSPHRASE
+        bool "Get WPA2 passphrase in WPS config"
+        default n
+        help
+            Select this option to get passphrase during WPS configuration.
+            This option fakes the virtual display capabilites to get the
+            configuration in passphrase mode.
+            Not recommanded to be used since WPS credentials should not
+            be shared to other devices, making it in readable format increases
+            that risk, also passphrase requires pbkdf2 to convert in psk.
+
+endmenu # Wi-Fi

@@ -86,8 +86,9 @@
 #define SOC_ADC_FILTER_SUPPORTED                1
 #define SOC_ADC_MONITOR_SUPPORTED               1
 #define SOC_ADC_DMA_SUPPORTED                   1
+#define SOC_ADC_DIG_SUPPORTED_UNIT(UNIT)        1    //Digital controller supported ADC unit
 #define SOC_ADC_PERIPH_NUM                      (2)
-#define SOC_ADC_CHANNEL_NUM(PERIPH_NUM)         (10)
+#define SOC_ADC_CHANNEL_NUM(UNIT)               (10)
 #define SOC_ADC_MAX_CHANNEL_NUM                 (10)
 #define SOC_ADC_ATTEN_NUM                       (4)
 
@@ -147,8 +148,8 @@
 // GPIO 46 is input only
 #define SOC_GPIO_VALID_OUTPUT_GPIO_MASK     (SOC_GPIO_VALID_GPIO_MASK & ~(0ULL | BIT46))
 
-// Support to configure slept status
-#define SOC_GPIO_SUPPORT_SLP_SWITCH  (1)
+// digital I/O pad powered by VDD3P3_CPU or VDD_SPI(GPIO_NUM_26~GPIO_NUM_46)
+#define SOC_GPIO_VALID_DIGITAL_IO_PAD_MASK  0x00007FFFFC000000ULL
 
 /*-------------------------- Dedicated GPIO CAPS ---------------------------------------*/
 #define SOC_DEDIC_GPIO_OUT_CHANNELS_NUM (8) /*!< 8 outward channels on each CPU core */
@@ -355,6 +356,13 @@
 #define SOC_AES_SUPPORT_DMA     (1)
 #define SOC_AES_SUPPORT_GCM     (1)
 
+/*-------------------------- eFuse CAPS----------------------------*/
+#define SOC_EFUSE_DIS_DOWNLOAD_DCACHE 1
+#define SOC_EFUSE_HARD_DIS_JTAG 1
+#define SOC_EFUSE_SOFT_DIS_JTAG 1
+#define SOC_EFUSE_DIS_BOOT_REMAP 1
+#define SOC_EFUSE_DIS_LEGACY_SPI_BOOT 1
+
 /*-------------------------- Secure Boot CAPS----------------------------*/
 #define SOC_SECURE_BOOT_V2_RSA              1
 #define SOC_EFUSE_SECURE_BOOT_KEY_DIGESTS   3
@@ -394,9 +402,10 @@
 /*-------------------------- Power Management CAPS ---------------------------*/
 #define SOC_PM_SUPPORT_EXT_WAKEUP                 (1)
 #define SOC_PM_SUPPORT_WIFI_WAKEUP                (1)
+#define SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP        (1)     /*!<Supports waking up from touch pad trigger */
+
 #define SOC_PM_SUPPORT_WIFI_PD                    (1)
 #define SOC_PM_SUPPORT_RTC_PERIPH_PD              (1)
-#define SOC_PM_SUPPORT_TOUCH_SENSOR_WAKEUP        (1)     /*!<Supports waking up from touch pad trigger */
 #define SOC_PM_SUPPORT_RTC_FAST_MEM_PD            (1)
 #define SOC_PM_SUPPORT_RTC_SLOW_MEM_PD            (1)
 

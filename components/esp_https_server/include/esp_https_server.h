@@ -96,6 +96,9 @@ struct httpd_ssl_config {
 
     /** User callback for esp_https_server */
     esp_https_server_user_cb *user_cb;
+
+    void *ssl_userdata; /*!< user data to add to the ssl context  */
+    esp_tls_handshake_callback cert_select_cb; /*!< Certificate selection callback to use */
 };
 
 typedef struct httpd_ssl_config httpd_ssl_config_t;
@@ -129,6 +132,12 @@ typedef struct httpd_ssl_config httpd_ssl_config_t;
         .global_user_ctx_free_fn = NULL,          \
         .global_transport_ctx = NULL,             \
         .global_transport_ctx_free_fn = NULL,     \
+        .enable_so_linger = false,                \
+        .linger_timeout = 0,                      \
+        .keep_alive_enable = false,               \
+        .keep_alive_idle = 0,                     \
+        .keep_alive_interval = 0,                 \
+        .keep_alive_count = 0,                    \
         .open_fn = NULL,                          \
         .close_fn = NULL,                         \
         .uri_match_fn = NULL                      \
@@ -145,6 +154,8 @@ typedef struct httpd_ssl_config httpd_ssl_config_t;
     .session_tickets = false,                     \
     .use_secure_element = false,                  \
     .user_cb = NULL,                              \
+    .ssl_userdata = NULL,                         \
+    .cert_select_cb = NULL                        \
 }
 
 /**

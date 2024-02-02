@@ -47,12 +47,7 @@ void bootloader_console_init(void)
 {
     const int uart_num = CONFIG_ESP_CONSOLE_UART_NUM;
 
-#if !ESP_ROM_SUPPORT_MULTIPLE_UART
-    /* esp_rom_install_channel_put is not available unless multiple UARTs are supported */
     esp_rom_install_uart_printf();
-#else
-    esp_rom_install_channel_putc(1, esp_rom_uart_putc);
-#endif
 
     // Wait for UART FIFO to be empty.
     esp_rom_uart_tx_wait_idle(0);
@@ -61,10 +56,10 @@ void bootloader_console_init(void)
     // Some constants to make the following code less upper-case
     const int uart_tx_gpio = CONFIG_ESP_CONSOLE_UART_TX_GPIO;
     const int uart_rx_gpio = CONFIG_ESP_CONSOLE_UART_RX_GPIO;
+
     // Switch to the new UART (this just changes UART number used for esp_rom_printf in ROM code).
-#if ESP_ROM_SUPPORT_MULTIPLE_UART
     esp_rom_uart_set_as_console(uart_num);
-#endif
+
     // If console is attached to UART1 or if non-default pins are used,
     // need to reconfigure pins using GPIO matrix
     if (uart_num != 0 ||
@@ -110,7 +105,7 @@ void bootloader_console_init(void)
 #endif
 
     esp_rom_uart_usb_acm_init(s_usb_cdc_buf, sizeof(s_usb_cdc_buf));
-    esp_rom_uart_set_as_console(ESP_ROM_UART_USB);
+    esp_rom_uart_set_as_console(ESP_ROM_USB_OTG_NUM);
     esp_rom_install_channel_putc(1, bootloader_console_write_char_usb);
 }
 #endif //CONFIG_ESP_CONSOLE_USB_CDC

@@ -7,10 +7,18 @@ config ESP_ROM_HAS_CRC_LE
     bool
     default y
 
-config ESP_ROM_SUPPORT_MULTIPLE_UART
+config ESP_ROM_HAS_MZ_CRC32
     bool
     default y
 
 config ESP_ROM_NEEDS_SWSETUP_WORKAROUND
     bool
     default y
+
+config ESP_ROM_HAS_FLASH_COUNT_PAGES_BUG
+    bool
+    default y
+
+config ESP_ROM_USB_OTG_NUM
+    int
+    default 3

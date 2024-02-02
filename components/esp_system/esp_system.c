@@ -30,6 +30,15 @@ static shutdown_handler_t shutdown_handlers[SHUTDOWN_HANDLERS_NO];
 
 void IRAM_ATTR esp_restart_noos_dig(void)
 {
+    // In case any of the calls below results in re-enabling of interrupts
+    // (for example, by entering a critical section), disable all the
+    // interrupts (e.g. from watchdogs) here.
+#ifdef CONFIG_IDF_TARGET_ARCH_RISCV
+    rv_utils_intr_global_disable();
+#else
+    xt_ints_off(0xFFFFFFFF);
+#endif
+
     // make sure all the panic handler output is sent from UART FIFO
     if (CONFIG_ESP_CONSOLE_UART_NUM >= 0) {
         esp_rom_uart_tx_wait_idle(CONFIG_ESP_CONSOLE_UART_NUM);
@@ -38,10 +47,19 @@ void IRAM_ATTR esp_restart_noos_dig(void)
     // switch to XTAL (otherwise we will keep running from the PLL)
     rtc_clk_cpu_freq_set_xtal();
 
-#if CONFIG_IDF_TARGET_ESP32
-    esp_cpu_unstall(PRO_CPU_NUM);
+    // esp_restart_noos_dig() will generates a core reset, which does not reset the
+    // registers of the RTC domain, so the CPU's stall state remains after the reset,
+    // we need to release them here
+#if !CONFIG_FREERTOS_UNICORE
+    // Unstall all other cores
+    int core_id = esp_cpu_get_core_id();
+    for (uint32_t i = 0; i < SOC_CPU_CORES_NUM; i++) {
+        if (i != core_id) {
+            esp_cpu_unstall(i);
+        }
+    }
 #endif
-    // reset the digital part
+    // generate core reset
     SET_PERI_REG_MASK(RTC_CNTL_OPTIONS0_REG, RTC_CNTL_SW_SYS_RST);
     while (true) {
         ;

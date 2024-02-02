@@ -17,6 +17,8 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_private/adc_private.h"
 #include "esp_private/adc_share_hw_ctrl.h"
+#include "esp_private/sar_periph_ctrl.h"
+#include "esp_private/esp_sleep_internal.h"
 #include "hal/adc_types.h"
 #include "hal/adc_oneshot_hal.h"
 #include "hal/adc_ll.h"
@@ -77,6 +79,13 @@ esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *init_config, a
     adc_oneshot_unit_ctx_t *unit = NULL;
     ESP_GOTO_ON_FALSE(init_config && ret_unit, ESP_ERR_INVALID_ARG, err, TAG, "invalid argument: null pointer");
     ESP_GOTO_ON_FALSE(init_config->unit_id < SOC_ADC_PERIPH_NUM, ESP_ERR_INVALID_ARG, err, TAG, "invalid unit");
+#if CONFIG_IDF_TARGET_ESP32C3 && !CONFIG_ADC_ONESHOT_FORCE_USE_ADC2_ON_C3
+    /**
+     * We only check this on ESP32C3, because other adc units are no longer supported on later chips
+     * If CONFIG_ADC_ONESHOT_FORCE_USE_ADC2_ON_C3 is enabled, we jump this check
+     */
+    ESP_GOTO_ON_FALSE(SOC_ADC_DIG_SUPPORTED_UNIT(init_config->unit_id), ESP_ERR_INVALID_ARG, err, TAG, "adc unit not supported");
+#endif
 
     unit = heap_caps_calloc(1, sizeof(adc_oneshot_unit_ctx_t), ADC_MEM_ALLOC_CAPS);
     ESP_GOTO_ON_FALSE(unit, ESP_ERR_NO_MEM, err, TAG, "no mem for unit");
@@ -105,7 +114,11 @@ esp_err_t adc_oneshot_new_unit(const adc_oneshot_unit_init_cfg_t *init_config, a
     _lock_release(&s_ctx.mutex);
 #endif
 
-    adc_power_acquire();
+    if (init_config->ulp_mode == ADC_ULP_MODE_DISABLE) {
+        sar_periph_ctrl_adc_oneshot_power_acquire();
+    } else {
+        esp_sleep_enable_adc_tsens_monitor(true);
+    }
 
     ESP_LOGD(TAG, "new adc unit%"PRId32" is created", unit->unit_id);
     *ret_unit = unit;
@@ -192,6 +205,7 @@ esp_err_t adc_oneshot_read_isr(adc_oneshot_unit_handle_t handle, adc_channel_t c
 esp_err_t adc_oneshot_del_unit(adc_oneshot_unit_handle_t handle)
 {
     ESP_RETURN_ON_FALSE(handle, ESP_ERR_INVALID_ARG, TAG, "invalid argument: null pointer");
+    adc_ulp_mode_t ulp_mode = handle->ulp_mode;
     bool success_free = s_adc_unit_free(handle->unit_id);
     ESP_RETURN_ON_FALSE(success_free, ESP_ERR_NOT_FOUND, TAG, "adc%"PRId32" isn't in use", handle->unit_id + 1);
 
@@ -202,7 +216,11 @@ esp_err_t adc_oneshot_del_unit(adc_oneshot_unit_handle_t handle)
     ESP_LOGD(TAG, "adc unit%"PRId32" is deleted", handle->unit_id);
     free(handle);
 
-    adc_power_release();
+    if (ulp_mode == ADC_ULP_MODE_DISABLE) {
+        sar_periph_ctrl_adc_oneshot_power_release();
+    } else {
+        esp_sleep_enable_adc_tsens_monitor(false);
+    }
 
 #if SOC_ADC_DIG_CTRL_SUPPORTED && !SOC_ADC_RTC_CTRL_SUPPORTED
     //To free the APB_SARADC periph if needed

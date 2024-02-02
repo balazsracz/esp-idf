@@ -866,6 +866,89 @@ TEST_CASE("Test a latency between a call of callback and real event", "[esp_time
     TEST_ESP_OK(esp_timer_delete(periodic_timer));
 }
 
+static void test_timer_triggered(void* timer1_trig)
+{
+    int* timer = (int *)timer1_trig;
+    *timer = *timer + 1;
+}
+
+TEST_CASE("periodic esp_timer can be restarted", "[esp_timer]")
+{
+    const int delay_ms = 100;
+    int timer_trig = 0;
+    esp_timer_handle_t timer1;
+    esp_timer_create_args_t create_args = {
+            .callback = &test_timer_triggered,
+            .arg = &timer_trig,
+            .name = "timer1",
+    };
+    TEST_ESP_OK(esp_timer_create(&create_args, &timer1));
+    TEST_ESP_OK(esp_timer_start_periodic(timer1, delay_ms * 1000));
+    /* Sleep for delay_ms/2 and restart the timer */
+    vTaskDelay((delay_ms / 2) * portTICK_PERIOD_MS);
+    /* Check that the alarm was not triggered */
+    TEST_ASSERT_EQUAL(0, timer_trig);
+    /* Reaching this point, the timer will be triggered in delay_ms/2.
+     * Let's restart the timer now with the same period. */
+    TEST_ESP_OK(esp_timer_restart(timer1, delay_ms * 1000));
+    /* Sleep for a bit more than delay_ms/2 */
+    vTaskDelay(((delay_ms / 2) + 1) * portTICK_PERIOD_MS);
+    /* If the alarm was triggered, restart didn't work */
+    TEST_ASSERT_EQUAL(0, timer_trig);
+    /* Else, wait for another delay_ms/2, which should trigger the alarm */
+    vTaskDelay(((delay_ms / 2) + 2) * portTICK_PERIOD_MS);
+    TEST_ASSERT_EQUAL(1, timer_trig);
+    /* Now wait for another delay_ms to make sure the timer is still periodic */
+    timer_trig = 0;
+    vTaskDelay((delay_ms * portTICK_PERIOD_MS) + 1);
+    /* Make sure the timer was triggered */
+    TEST_ASSERT_EQUAL(1, timer_trig);
+    /* Reduce the period of the timer to delay/2 */
+    timer_trig = 0;
+    TEST_ESP_OK(esp_timer_restart(timer1, delay_ms / 2 * 1000));
+    vTaskDelay((delay_ms * portTICK_PERIOD_MS) + 1);
+    /* Check that the alarm was triggered twice */
+    TEST_ASSERT_EQUAL(2, timer_trig);
+
+    TEST_ESP_OK( esp_timer_stop(timer1) );
+    TEST_ESP_OK( esp_timer_delete(timer1) );
+}
+
+TEST_CASE("one-shot esp_timer can be restarted", "[esp_timer]")
+{
+    const int delay_ms = 100;
+    int timer_trig = 0;
+    esp_timer_handle_t timer1;
+    esp_timer_create_args_t create_args = {
+            .callback = &test_timer_triggered,
+            .arg = &timer_trig,
+            .name = "timer1",
+    };
+    TEST_ESP_OK(esp_timer_create(&create_args, &timer1));
+    TEST_ESP_OK(esp_timer_start_once(timer1, delay_ms * 1000));
+    vTaskDelay((delay_ms / 2) * portTICK_PERIOD_MS);
+    /* Check that the alarm was not triggered */
+    TEST_ASSERT_EQUAL(0, timer_trig);
+    /* Reaching this point, the timer will be triggered in delay_ms/2.
+     * Let's restart the timer now with the same timeout. */
+    TEST_ESP_OK(esp_timer_restart(timer1, delay_ms * 1000));
+    vTaskDelay(((delay_ms / 2) + 1) * portTICK_PERIOD_MS);
+    /* If the alarm was triggered, restart didn't work */
+    TEST_ASSERT_EQUAL(0, timer_trig);
+    /* Else, wait for another delay_ms/2, which should trigger the alarm */
+    vTaskDelay(((delay_ms / 2) + 2) * portTICK_PERIOD_MS);
+    TEST_ASSERT_EQUAL(1, timer_trig);
+    /* Make sure the timer is NOT periodic, wait for another delay and make sure
+     * our callback was not called */
+    timer_trig = 0;
+    vTaskDelay(delay_ms * 2 * portTICK_PERIOD_MS);
+    /* Make sure the timer was triggered */
+    TEST_ASSERT_EQUAL(0, timer_trig);
+
+    TEST_ESP_OK( esp_timer_delete(timer1) );
+}
+
+
 #ifdef CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD
 static int64_t old_time[2];
 
@@ -875,7 +958,7 @@ static void timer_isr_callback(void* arg)
     int64_t now = esp_timer_get_time();
     int64_t dt = now - old_time[num_timer];
     old_time[num_timer] = now;
-    if (num_timer == 1) {
+    if (num_timer == 0) {
         esp_rom_printf("(%lld): \t\t\t\t timer ISR, dt: %lld us\n", now, dt);
         assert(xPortInIsrContext());
     } else {
@@ -887,7 +970,7 @@ static void timer_isr_callback(void* arg)
 TEST_CASE("Test ESP_TIMER_ISR dispatch method", "[esp_timer]")
 {
     TEST_ESP_OK(esp_timer_dump(stdout));
-    int timer[2]= {1, 2};
+    int timer[2]= {0, 1};
     const esp_timer_create_args_t periodic_timer1_args = {
         .callback = &timer_isr_callback,
         .dispatch_method = ESP_TIMER_ISR,
@@ -1097,4 +1180,73 @@ TEST_CASE("Test ESP_TIMER_ISR, stop API cleans alarm reg if ISR timer list is em
     vSemaphoreDelete(done);
     printf("timer deleted\n");
 }
+
+volatile uint64_t task_t1;
+volatile uint64_t isr_t1;
+const uint64_t period_task_ms = 200;
+const uint64_t period_isr_ms = 20;
+
+void task_timer_cb(void *arg) {
+    uint64_t t2 = esp_timer_get_time();
+    uint64_t dt_task_ms = (t2 - task_t1) / 1000;
+    task_t1 = t2;
+    printf("task callback, %d msec\n", (int)dt_task_ms);
+    vTaskDelay((period_task_ms / 2) / portTICK_PERIOD_MS);  // very long callback in timer task
+    static bool first_run = true;
+    if (first_run) {
+        first_run = false;
+    } else {
+        TEST_ASSERT_INT_WITHIN(period_task_ms / 3, period_task_ms, dt_task_ms);
+    }
+}
+
+void IRAM_ATTR isr_timer_cb(void *arg) {
+    uint64_t t2 = esp_timer_get_time();
+    uint64_t dt_isr_ms = (t2 - isr_t1) / 1000;
+    isr_t1 = t2;
+    esp_rom_printf("isr callback, %d msec\n", (int)dt_isr_ms);
+    static bool first_run = true;
+    if (first_run) {
+        first_run = false;
+    } else {
+        TEST_ASSERT_INT_WITHIN(period_isr_ms / 3, period_isr_ms, dt_isr_ms);
+    }
+}
+
+TEST_CASE("Test ISR dispatch callbacks are not blocked even if TASK callbacks take more time", "[esp_timer][isr_dispatch]")
+{
+    esp_timer_handle_t task_timer_handle;
+    esp_timer_handle_t isr_timer_handle;
+
+    const esp_timer_create_args_t task_timer_args = {
+        .callback = &task_timer_cb,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "task_timer",
+        .skip_unhandled_events = true,
+    };
+
+    const esp_timer_create_args_t isr_timer_args = {
+        .callback = &isr_timer_cb,
+        .arg = NULL,
+        .dispatch_method = ESP_TIMER_ISR,
+        .name = "isr_timer",
+        .skip_unhandled_events = true,
+    };
+
+    ESP_ERROR_CHECK(esp_timer_create(&task_timer_args, &task_timer_handle));
+    ESP_ERROR_CHECK(esp_timer_create(&isr_timer_args, &isr_timer_handle));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(task_timer_handle, period_task_ms * 1000));
+    task_t1 = esp_timer_get_time();
+    ESP_ERROR_CHECK(esp_timer_start_periodic(isr_timer_handle, period_isr_ms * 1000));
+    isr_t1 = esp_timer_get_time();
+
+    vTaskDelay(period_task_ms * 5 / portTICK_PERIOD_MS);
+
+    TEST_ESP_OK(esp_timer_stop(task_timer_handle));
+    TEST_ESP_OK(esp_timer_stop(isr_timer_handle));
+    TEST_ESP_OK(esp_timer_delete(task_timer_handle));
+    TEST_ESP_OK(esp_timer_delete(isr_timer_handle));
+}
+
 #endif // CONFIG_ESP_TIMER_SUPPORTS_ISR_DISPATCH_METHOD

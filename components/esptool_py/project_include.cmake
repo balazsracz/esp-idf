@@ -42,6 +42,17 @@ set(esptool_elf2image_args
     --flash_size ${ESPFLASHSIZE}
     )
 
+if(BOOTLOADER_BUILD AND CONFIG_SECURE_BOOT_V2_ENABLED)
+    # The bootloader binary needs to be 4KB aligned in order to append a secure boot V2 signature block.
+    # If CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES is NOT set, the bootloader
+    # image generated is not 4KB aligned for external HSM to sign it readily.
+    # Following esptool option --pad-to-size 4KB generates a 4K aligned bootloader image.
+    # In case of signing during build, espsecure.py "sign_data" operation handles the 4K alignment of the image.
+    if(NOT CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES)
+        list(APPEND esptool_elf2image_args --pad-to-size 4KB)
+    endif()
+endif()
+
 set(MMU_PAGE_SIZE ${CONFIG_MMU_PAGE_MODE})
 
 if(NOT BOOTLOADER_BUILD)
@@ -60,21 +71,24 @@ if(NOT CONFIG_SECURE_BOOT_ALLOW_SHORT_APP_PARTITION AND
     endif()
 endif()
 
-if(CONFIG_ESP32_REV_MIN)
-    set(min_rev ${CONFIG_ESP32_REV_MIN})
+# We still set "--min-rev" to keep the app compatible with older booloaders where this field is controlled.
+if(CONFIG_IDF_TARGET_ESP32)
+    # for this chip min_rev is major revision
+    math(EXPR min_rev "${CONFIG_ESP_REV_MIN_FULL} / 100")
 endif()
-if(CONFIG_ESP32C3_REV_MIN)
-    set(min_rev ${CONFIG_ESP32C3_REV_MIN})
-endif()
-if(CONFIG_IDF_TARGET_ESP32C2)
-    set(min_rev 1)
+if(CONFIG_IDF_TARGET_ESP32C3)
+    # for this chip min_rev is minor revision
+    math(EXPR min_rev "${CONFIG_ESP_REV_MIN_FULL} % 100")
 endif()
 
 if(min_rev)
     list(APPEND esptool_elf2image_args --min-rev ${min_rev})
-    set(monitor_rev_args "--revision;${min_rev}")
-    unset(min_rev)
 endif()
+
+list(APPEND esptool_elf2image_args --min-rev-full ${CONFIG_ESP_REV_MIN_FULL})
+list(APPEND esptool_elf2image_args --max-rev-full ${CONFIG_ESP_REV_MAX_FULL})
+
+set(monitor_rev_args "--revision;${CONFIG_ESP_REV_MIN_FULL}")
 
 if(CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE)
     # Set ESPFLASHSIZE to 'detect' *after* esptool_elf2image_args are generated,
@@ -123,7 +137,7 @@ if(CONFIG_APP_BUILD_GENERATE_BINARIES)
 endif()
 
 set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-    APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
+    APPEND PROPERTY ADDITIONAL_CLEAN_FILES
     "${build_dir}/${unsigned_project_binary}"
     )
 
@@ -156,7 +170,7 @@ if(NOT BOOTLOADER_BUILD AND CONFIG_SECURE_SIGNED_APPS)
         add_dependencies(gen_project_binary gen_signed_project_binary)
 
         set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            APPEND PROPERTY ADDITIONAL_MAKE_CLEAN_FILES
+            APPEND PROPERTY ADDITIONAL_CLEAN_FILES
             "${build_dir}/${PROJECT_BIN}"
             )
     else()

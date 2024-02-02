@@ -56,6 +56,7 @@ INPUT = \
     $(PROJECT_PATH)/components/bt/host/bluedroid/api/include/api/esp_hf_defs.h \
     $(PROJECT_PATH)/components/bt/host/bluedroid/api/include/api/esp_spp_api.h \
     $(PROJECT_PATH)/components/bt/host/bluedroid/api/include/api/esp_hidd_api.h \
+    $(PROJECT_PATH)/components/bt/host/bluedroid/api/include/api/esp_hidh_api.h \
     $(PROJECT_PATH)/components/bt/host/bluedroid/api/include/api/esp_l2cap_bt_api.h \
     $(PROJECT_PATH)/components/bt/host/bluedroid/api/include/api/esp_sdp_api.h \
     $(PROJECT_PATH)/components/bt/host/nimble/esp-hci/include/esp_nimble_hci.h \
@@ -171,6 +172,7 @@ INPUT = \
     $(PROJECT_PATH)/components/hal/include/hal/touch_sensor_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/twai_types.h \
     $(PROJECT_PATH)/components/hal/include/hal/uart_types.h \
+    $(PROJECT_PATH)/components/hal/include/hal/efuse_hal.h \
     $(PROJECT_PATH)/components/heap/include/esp_heap_caps.h \
     $(PROJECT_PATH)/components/heap/include/esp_heap_caps_init.h \
     $(PROJECT_PATH)/components/heap/include/esp_heap_trace.h \
@@ -243,7 +245,8 @@ PREDEFINED             = \
     $(ENV_DOXYGEN_DEFINES) \
     __DOXYGEN__=1 \
     __attribute__(x)= \
-	_Static_assert()= \
+    _Static_assert()= \
+    ESP_STATIC_ASSERT()= \
     IDF_DEPRECATED(X)= \
     IRAM_ATTR= \
     FORCE_INLINE_ATTR= \

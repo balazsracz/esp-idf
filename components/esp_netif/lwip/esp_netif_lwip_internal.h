@@ -21,7 +21,10 @@ typedef struct esp_netif_api_msg_s {
     int type;  /**< The first field MUST be int */
     int ret;
     esp_netif_api_fn api_fn;
-    esp_netif_t *esp_netif;
+    union {
+        esp_netif_t *esp_netif;
+        esp_netif_callback_fn user_fn;
+    };
     void    *data;
 } esp_netif_api_msg_t;
 
@@ -73,7 +76,7 @@ struct esp_netif_obj {
     // lwip netif related
     struct netif *lwip_netif;
     err_t (*lwip_init_fn)(struct netif*);
-    void (*lwip_input_fn)(void *input_netif_handle, void *buffer, size_t len, void *eb);
+    esp_netif_recv_ret_t (*lwip_input_fn)(void *input_netif_handle, void *buffer, size_t len, void *eb);
     void * netif_handle;    // netif impl context (either vanilla lwip-netif or ppp_pcb)
     netif_related_data_t *related_data; // holds additional data for specific netifs
 #if ESP_DHCPS
