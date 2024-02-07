@@ -787,7 +787,9 @@ static uint32_t UART_ISR_ATTR uart_enable_tx_write_fifo(uart_port_t uart_num, co
     uint32_t sent_len = 0;
     UART_ENTER_CRITICAL_SAFE(&(uart_context[uart_num].spinlock));
     if (UART_IS_MODE_SET(uart_num, UART_MODE_RS485_HALF_DUPLEX)) {
+#if CONFIG_IDF_TARGET_ESP32S3                    
         uart_context[uart_num].hal.dev->clk_conf.rx_sclk_en = 0;
+#endif        
         uart_hal_set_rts(&(uart_context[uart_num].hal), 0);
         // If any new things are written to fifo, then we can always clear the previous TX_DONE interrupt bit (if it was set)
         // Old TX_DONE bit might reset the RTS, leading new tx transmission failure for rs485 mode
@@ -1080,7 +1082,9 @@ static void UART_ISR_ATTR uart_rx_intr_handler_default(void *param)
                 if (UART_IS_MODE_SET(uart_num, UART_MODE_RS485_HALF_DUPLEX)) {
                     uart_hal_rxfifo_rst(&(uart_context[uart_num].hal));
                     uart_hal_set_rts(&(uart_context[uart_num].hal), 1);
+#if CONFIG_IDF_TARGET_ESP32S3                    
                     uart_context[uart_num].hal.dev->clk_conf.rx_sclk_en = 1;
+#endif                    
                 }
                 UART_EXIT_CRITICAL_ISR(&(uart_context[uart_num].spinlock));
                 xSemaphoreGiveFromISR(p_uart_obj[uart_num]->tx_done_sem, &HPTaskAwoken);
